@@ -24,7 +24,7 @@
 //! be used for querying, which is used to size the grid's voxels.
 //!
 //! ```rust
-//! use mvtree::Mvt;
+//! use mvtable::Mvt;
 //!
 //! // list of points in cloud
 //! let points = [[0.0, 1.1], [0.2, 3.1]];
@@ -36,7 +36,7 @@
 //! Once you have an [`Mvt`], you can use it for collision-checking against spheres.
 //!
 //! ```rust
-//! # use mvtree::Mvt;
+//! # use mvtable::Mvt;
 //! # let points = [[0.0, 1.1], [0.2, 3.1]];
 //! # let mvt = Mvt::<2>::new(&points, 2.0);
 //! let center = [0.0, 0.0]; // center of sphere
@@ -266,7 +266,7 @@ pub enum NewMvtError {
 /// let points = [[0.0, 0.1], [0.4, -0.2], [-0.2, -0.1]];
 ///
 /// // query radii must be between 0.0 and 0.2
-/// let t = mvtree::Mvt::<2>::new(&points, 0.2);
+/// let t = mvtable::Mvt::<2>::new(&points, 0.2);
 ///
 /// assert!(!t.collides(&[0.0, 0.3], 0.1));
 /// assert!(t.collides(&[0.0, 0.2], 0.15));
@@ -310,7 +310,7 @@ impl<const K: usize, A: Axis> Mvt<K, A> {
     /// ```
     /// let points = [[0.0]];
     ///
-    /// let mvt = mvtree::Mvt::<1>::new(&points, f32::INFINITY);
+    /// let mvt = mvtable::Mvt::<1>::new(&points, f32::INFINITY);
     ///
     /// assert!(mvt.collides(&[1.0], 1.5));
     /// assert!(!mvt.collides(&[1.0], 0.5));
@@ -332,7 +332,7 @@ impl<const K: usize, A: Axis> Mvt<K, A> {
     /// ```
     /// let points = [[0.0]];
     ///
-    /// let mvt = mvtree::Mvt::<1>::with_point_radius(&points, f32::INFINITY, 0.2);
+    /// let mvt = mvtable::Mvt::<1>::with_point_radius(&points, f32::INFINITY, 0.2);
     ///
     /// assert!(mvt.collides(&[1.0], 1.5));
     /// assert!(!mvt.collides(&[1.0], 0.5));
@@ -352,7 +352,7 @@ impl<const K: usize, A: Axis> Mvt<K, A> {
     ///
     /// ```
     /// let points = [[0.0]];
-    /// let mvt = mvtree::Mvt::<1>::try_new(&points, f32::INFINITY).unwrap();
+    /// let mvt = mvtable::Mvt::<1>::try_new(&points, f32::INFINITY).unwrap();
     /// ```
     pub fn try_new(points: &[[A; K]], r_max: A) -> Result<Self, NewMvtError> {
         Self::try_with_point_radius(points, r_max, A::ZERO)
@@ -369,7 +369,7 @@ impl<const K: usize, A: Axis> Mvt<K, A> {
     ///
     /// ```
     /// let points = [[0.0]];
-    /// let mvt = mvtree::Mvt::<1>::try_with_point_radius(&points, f32::INFINITY, 0.01).unwrap();
+    /// let mvt = mvtable::Mvt::<1>::try_with_point_radius(&points, f32::INFINITY, 0.01).unwrap();
     /// ```
     pub fn try_with_point_radius(
         points: &[[A; K]],
@@ -547,7 +547,7 @@ impl<const K: usize, A: Axis> Mvt<K, A> {
     ///
     /// ```
     /// let points = [[0.0; 3], [1.0, -1.1, 0.5], [-0.2, -0.3, 0.25]];
-    /// let mvt = mvtree::Mvt::<3>::new(&points, 0.2);
+    /// let mvt = mvtable::Mvt::<3>::new(&points, 0.2);
     ///
     /// assert!(mvt.collides(&[0.0, 0.1, 0.0], 0.11));
     /// assert!(!mvt.collides(&[0.0, 0.1, 0.0], 0.05));
@@ -612,7 +612,7 @@ impl<const K: usize, A: Axis> Mvt<K, A> {
     /// It makes no guarantee of iteration order.
     ///
     /// ```
-    /// let mvt = mvtree::Mvt::<2>::new(&[[0.0, 1.0]], f32::INFINITY);
+    /// let mvt = mvtable::Mvt::<2>::new(&[[0.0, 1.0]], f32::INFINITY);
     /// for point in mvt.points() {
     ///     println!("{point:?}");
     /// }
