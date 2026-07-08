@@ -1,7 +1,9 @@
 //! Construction- and query-time comparison of `mvtable` against `capt` and `kiddo`'s immutable
-//! k-d tree, across a range of point cloud sizes.
+//! k-d tree, across a range of point cloud sizes, plus a comparison of `mvtable`'s scalar
+//! `collides` against its SIMD-batched `collides_simd`.
+#![feature(portable_simd)]
 
-use std::hint::black_box;
+use std::{hint::black_box, simd::Simd};
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use mvtable_bench::{Structure, uniform_cloud};
@@ -110,5 +112,115 @@ fn query(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, construction, query);
+/// Group `queries` into batches of `L`, converting each batch into a SIMD center/radius vector.
+/// Any remainder that doesn't fill a full batch of `L` is dropped.
+fn to_simd_batches<const L: usize>(
+    queries: &[([f32; 3], f32)],
+) -> Vec<([Simd<f32, L>; 3], Simd<f32, L>)> {
+    queries
+        .chunks_exact(L)
+        .map(|chunk| {
+            let centers: [Simd<f32, L>; 3] = std::array::from_fn(|k| {
+                Simd::from_array(std::array::from_fn(|lane| chunk[lane].0[k]))
+            });
+            let radii = Simd::from_array(std::array::from_fn(|lane| chunk[lane].1));
+            (centers, radii)
+        })
+        .collect()
+}
+
+/// The largest lane width `L` benchmarked; `capt` needs to be constructed with at least this many
+/// lanes to be queried with any `L` up to it.
+const MAX_L: usize = 8;
+
+/// Benchmark `mvtable`'s and `capt`'s scalar `collides`, once per trace (shared as the baseline
+/// for every SIMD lane width compared against them).
+fn bench_scalar_query(
+    group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
+    trace_name: &str,
+    trace_of: impl Fn(&[[f32; 3]], &mut SmallRng) -> Vec<([f32; 3], f32)>,
+) {
+    let mut rng = SmallRng::seed_from_u64(1);
+    for &n in &SIZES {
+        let points: Vec<[f32; 3]> = uniform_cloud(&mut rng, n, HALF_WIDTH);
+        let queries = trace_of(&points, &mut rng);
+        let mvt = mvtable::Mvt::<3, f32>::new(&points, R_MAX);
+        // `n_lanes = 1` matches how `capt` is constructed for the plain scalar `query` group.
+        let capt = capt::Capt::<3, f32, u32>::new(&points, (0.0, R_MAX), 1);
+
+        let id = BenchmarkId::new(format!("mvtable_scalar/{trace_name}"), n);
+        group.bench_with_input(id, &queries, |b, queries| {
+            b.iter(|| {
+                for (center, radius) in queries {
+                    black_box(mvt.collides(center, *radius));
+                }
+            });
+        });
+
+        let id = BenchmarkId::new(format!("capt_scalar/{trace_name}"), n);
+        group.bench_with_input(id, &queries, |b, queries| {
+            b.iter(|| {
+                for (center, radius) in queries {
+                    black_box(capt.collides(center, *radius));
+                }
+            });
+        });
+    }
+}
+
+/// Benchmark `mvtable`'s and `capt`'s SIMD-batched `collides_simd` at lane width `L`, using the
+/// same point clouds and queries (grouped into batches of `L`) as [`bench_scalar_query`].
+fn bench_simd_query<const L: usize>(
+    group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
+    trace_name: &str,
+    trace_of: impl Fn(&[[f32; 3]], &mut SmallRng) -> Vec<([f32; 3], f32)>,
+) {
+    let mut rng = SmallRng::seed_from_u64(1);
+    for &n in &SIZES {
+        let points: Vec<[f32; 3]> = uniform_cloud(&mut rng, n, HALF_WIDTH);
+        let queries = trace_of(&points, &mut rng);
+        let mvt = mvtable::Mvt::<3, f32>::new(&points, R_MAX);
+        let capt = capt::Capt::<3, f32, u32>::new(&points, (0.0, R_MAX), MAX_L);
+        let batches = to_simd_batches::<L>(&queries);
+
+        let id = BenchmarkId::new(format!("mvtable_simd_l{L}/{trace_name}"), n);
+        group.bench_with_input(id, &batches, |b, batches| {
+            b.iter(|| {
+                for (centers, radii) in batches {
+                    black_box(mvt.collides_simd(centers, *radii));
+                }
+            });
+        });
+
+        let id = BenchmarkId::new(format!("capt_simd_l{L}/{trace_name}"), n);
+        group.bench_with_input(id, &batches, |b, batches| {
+            b.iter(|| {
+                for (centers, radii) in batches {
+                    black_box(capt.collides_simd(centers, *radii));
+                }
+            });
+        });
+    }
+}
+
+fn simd_query(c: &mut Criterion) {
+    let mut group = c.benchmark_group("simd_query");
+    let traces: [(&str, TraceFn); 3] = [
+        ("mixed", |_, rng| mixed_queries(rng, N_QUERIES)),
+        ("colliding", |points, rng| {
+            colliding_queries(points, rng, N_QUERIES)
+        }),
+        ("non_colliding", |_, rng| {
+            non_colliding_queries(rng, N_QUERIES)
+        }),
+    ];
+    for (trace_name, trace_of) in traces {
+        bench_scalar_query(&mut group, trace_name, trace_of);
+        bench_simd_query::<4>(&mut group, trace_name, trace_of);
+        bench_simd_query::<MAX_L>(&mut group, trace_name, trace_of);
+    }
+    group.finish();
+}
+
+criterion_group!(benches, construction, query, simd_query);
 criterion_main!(benches);

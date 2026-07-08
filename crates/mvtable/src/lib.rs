@@ -369,12 +369,6 @@ pub enum NewMvtError {
 #[derive(Clone, Debug)]
 /// A multilevel voxel tree, a structure for point cloud collision checking.
 ///
-/// The MVT can be used for fast collision checking between spheres and point cloud data. Points
-/// are bucketed into voxels whose side length along each axis is at least `r_max + r_point`
-/// (voxels need not be cubes, so the workspace can have a different extent, and a different
-/// number of cells, along each axis), and voxels are addressed through a sparse, `K`-level table
-/// so that only occupied regions of space consume memory.
-///
 /// # Generic parameters
 ///
 /// - `K`: The dimension of the space.
