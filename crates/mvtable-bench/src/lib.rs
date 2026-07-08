@@ -5,6 +5,7 @@
 //! construct-then-query interface, so that both `benches/collide.rs` and `tests/correctness.rs`
 //! can be written once and run against every structure.
 
+use kiddo::SquaredEuclidean;
 use rand::{Rng, RngExt};
 
 /// A minimal common interface over the collision-checking structures being compared.
@@ -53,7 +54,9 @@ impl<const K: usize> Structure<K> for kiddo::ImmutableKdTree<f32, K> {
     fn collides(&self, center: &[f32; K], radius: f32) -> bool {
         // an empty tree has no nearest neighbor to query for.
         self.size() != 0
-            && self.nearest_one::<kiddo::SquaredEuclidean>(center).distance <= radius * radius
+            && !self
+                .within_unsorted::<SquaredEuclidean>(center, radius * radius)
+                .is_empty()
     }
 }
 
