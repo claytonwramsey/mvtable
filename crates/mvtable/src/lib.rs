@@ -61,9 +61,6 @@ use core::{
     ops::{Add, Div, Mul, Sub},
 };
 
-/// A sentinel value used in the table pool to indicate an empty (unallocated) entry.
-const SENTINEL: u32 = u32::MAX;
-
 /// A generic trait representing values that may be used as an axis; that is, elements of a
 /// vector representing a point.
 ///
@@ -142,6 +139,71 @@ macro_rules! impl_axis {
 impl_axis!(f32);
 impl_axis!(f64);
 
+/// An integer type used to address entries in the table pool and voxel array.
+///
+/// This is implemented so that [`Mvt`]s can use smaller index types (such as [`u16`] or [`u32`])
+/// for improved memory density, at the cost of supporting fewer voxels and points. This trait is
+/// implemented for [`u8`], [`u16`], [`u32`], [`u64`], and [`usize`].
+pub trait Index: Copy + PartialEq {
+    /// The zero index.
+    const ZERO: Self;
+    /// The sentinel value used to mark an empty (unallocated) table entry. An index equal to
+    /// this value can never be produced by [`Index::from_usize`].
+    const SENTINEL: Self;
+
+    #[must_use]
+    /// Convert a `usize` into an index, or `None` if it doesn't fit (or happens to equal
+    /// [`Index::SENTINEL`]).
+    fn from_usize(x: usize) -> Option<Self>;
+
+    #[must_use]
+    /// Convert this index back into a `usize`.
+    fn to_usize(self) -> usize;
+}
+
+macro_rules! impl_index {
+    ($t: ty) => {
+        impl Index for $t {
+            const ZERO: Self = 0;
+            const SENTINEL: Self = <$t>::MAX;
+
+            fn from_usize(x: usize) -> Option<Self> {
+                let v = Self::try_from(x).ok()?;
+                (v != Self::SENTINEL).then_some(v)
+            }
+
+            fn to_usize(self) -> usize {
+                self as usize
+            }
+        }
+    };
+}
+
+impl_index!(u8);
+impl_index!(u16);
+impl_index!(u32);
+impl_index!(usize);
+
+impl Index for u64 {
+    const ZERO: Self = 0;
+    const SENTINEL: Self = Self::MAX;
+
+    fn from_usize(x: usize) -> Option<Self> {
+        let v = Self::try_from(x).ok()?;
+        (v != Self::SENTINEL).then_some(v)
+    }
+
+    #[expect(
+        clippy::cast_possible_truncation,
+        reason = "every index was itself produced by `from_usize` on this same platform, so it \
+                  is always small enough to convert back into a usize, even though usize could \
+                  in principle be narrower than u64 on some other platform"
+    )]
+    fn to_usize(self) -> usize {
+        self as usize
+    }
+}
+
 /// An axis-aligned bounding box, used both as a global bound on the point cloud and as a local
 /// bound on the points contained by a single voxel.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -207,18 +269,22 @@ impl<A: Axis, const K: usize> Aabb<A, K> {
 
 /// Metadata for a single occupied voxel.
 #[derive(Clone, Copy, Debug)]
-struct Voxel<A, const K: usize> {
+struct Voxel<A, I, const K: usize> {
     /// A local bounding box over the points contained by this voxel.
     aabb: Aabb<A, K>,
     /// The offset of this voxel's points within the point coordinate pool.
-    offset: u32,
+    offset: I,
     /// The number of points contained by this voxel.
-    count: u32,
+    count: I,
 }
 
 /// The intermediate result of [`Mvt::build_hierarchy`]: the table pool, together with the points
 /// and bounding box accumulated so far for each voxel encountered, in first-encounter order.
-type VoxelBuckets<A, const K: usize> = (Vec<u32>, Vec<Vec<[A; K]>>, Vec<Aabb<A, K>>);
+type VoxelBuckets<A, I, const K: usize> = (Vec<I>, Vec<Vec<[A; K]>>, Vec<Aabb<A, K>>);
+
+/// The result of [`Mvt::flatten_points`]: metadata for each voxel, together with the point
+/// coordinate pool.
+type FlattenedVoxels<A, I, const K: usize> = (Vec<Voxel<A, I, K>>, Vec<A>);
 
 #[non_exhaustive]
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -247,6 +313,8 @@ pub enum NewMvtError {
 /// - `K`: The dimension of the space.
 /// - `A`: The value of the axes of each point. This should typically be `f32` or `f64`. This should
 ///   implement [`Axis`].
+/// - `I`: The index integer used internally to address voxels and points. This should generally be
+///   an unsigned integer type, such as `u32` or `usize`. This should implement [`Index`].
 ///
 /// # Citation
 ///
@@ -271,10 +339,10 @@ pub enum NewMvtError {
 /// assert!(!t.collides(&[0.0, 0.3], 0.1));
 /// assert!(t.collides(&[0.0, 0.2], 0.15));
 /// ```
-pub struct Mvt<const K: usize, A = f32> {
+pub struct Mvt<const K: usize, A = f32, I = u32> {
     /// The number of voxels along each axis of the grid. Axes need not have the same number of
     /// voxels, so the workspace need not be cubic.
-    grid_width: [u32; K],
+    grid_width: [I; K],
     /// The number of grid cells per unit length along each axis, i.e.
     /// `grid_width[k] / workspace_width[k]`.
     scale: [A; K],
@@ -284,17 +352,18 @@ pub struct Mvt<const K: usize, A = f32> {
     global_aabb: Aabb<A, K>,
     /// The table pool: the concatenation of the root table and every subsequently allocated
     /// table, storing offsets into this same pool for the first `K - 1` levels, and voxel
-    /// indices (into `voxels`) for the last level. Empty entries are marked with [`SENTINEL`].
-    tables: Box<[u32]>,
+    /// indices (into `voxels`) for the last level. Empty entries are marked with
+    /// [`Index::SENTINEL`].
+    tables: Box<[I]>,
     /// Metadata (bounding box, and location within `points`) for each occupied voxel.
-    voxels: Box<[Voxel<A, K>]>,
+    voxels: Box<[Voxel<A, I, K>]>,
     /// The point coordinate pool: for each voxel (in the order they appear in `voxels`), the
     /// coordinates of its points stored in struct-of-arrays order, i.e. all the 0th coordinates,
     /// then all the 1st coordinates, and so on.
     points: Box<[A]>,
 }
 
-impl<const K: usize, A: Axis> Mvt<K, A> {
+impl<const K: usize, A: Axis, I: Index> Mvt<K, A, I> {
     /// Construct a new MVT containing all the points in `points`.
     ///
     /// `r_max` is the maximum radius of the balls that will be queried against the tree; it is
@@ -389,7 +458,7 @@ impl<const K: usize, A: Axis> Mvt<K, A> {
         let Some(global_aabb) = Aabb::bounding_box(points) else {
             // no points: return an empty MVT that never collides.
             return Ok(Self {
-                grid_width: [0; K],
+                grid_width: [I::ZERO; K],
                 scale: [A::ZERO; K],
                 r_point,
                 global_aabb: Aabb::EMPTY,
@@ -403,7 +472,7 @@ impl<const K: usize, A: Axis> Mvt<K, A> {
         // along axis `k` is `extent[k] / grid_width[k]`, which is always at least `cell` thanks to
         // the floor division below.
         let mut grid_width = [0usize; K];
-        let mut grid_width_u32 = [0u32; K];
+        let mut grid_width_i = [I::ZERO; K];
         let mut scale = [A::ZERO; K];
         for k in 0..K {
             let extent = global_aabb.hi[k] - global_aabb.lo[k];
@@ -413,7 +482,7 @@ impl<const K: usize, A: Axis> Mvt<K, A> {
 
             let gw = usize::max(1, (extent / cell_wd).to_index());
             grid_width[k] = gw;
-            grid_width_u32[k] = u32::try_from(gw).map_err(|_| NewMvtError::TooManyVoxels)?;
+            grid_width_i[k] = I::from_usize(gw).ok_or(NewMvtError::TooManyVoxels)?;
             scale[k] = A::from_usize(gw) / extent;
         }
 
@@ -422,7 +491,7 @@ impl<const K: usize, A: Axis> Mvt<K, A> {
         let (voxels, pool) = Self::flatten_points(voxel_points, voxel_aabbs)?;
 
         Ok(Self {
-            grid_width: grid_width_u32,
+            grid_width: grid_width_i,
             scale,
             r_point,
             global_aabb,
@@ -442,8 +511,8 @@ impl<const K: usize, A: Axis> Mvt<K, A> {
         lo: [A; K],
         scale: [A; K],
         grid_width: [usize; K],
-    ) -> Result<VoxelBuckets<A, K>, NewMvtError> {
-        let mut tables: Vec<u32> = vec![SENTINEL; grid_width[0]];
+    ) -> Result<VoxelBuckets<A, I, K>, NewMvtError> {
+        let mut tables: Vec<I> = vec![I::SENTINEL; grid_width[0]];
         let mut voxel_points: Vec<Vec<[A; K]>> = Vec::new();
         let mut voxel_aabbs: Vec<Aabb<A, K>> = Vec::new();
 
@@ -466,24 +535,23 @@ impl<const K: usize, A: Axis> Mvt<K, A> {
             let mut table_offset = 0usize;
             for (level, &coord) in coords[..K - 1].iter().enumerate() {
                 let slot = table_offset + coord;
-                if tables[slot] == SENTINEL {
+                if tables[slot] == I::SENTINEL {
                     let new_offset = tables.len();
-                    tables.resize(new_offset + grid_width[level + 1], SENTINEL);
-                    tables[slot] =
-                        u32::try_from(new_offset).map_err(|_| NewMvtError::TooManyVoxels)?;
+                    tables.resize(new_offset + grid_width[level + 1], I::SENTINEL);
+                    tables[slot] = I::from_usize(new_offset).ok_or(NewMvtError::TooManyVoxels)?;
                 }
-                table_offset = tables[slot] as usize;
+                table_offset = tables[slot].to_usize();
             }
 
             let leaf_slot = table_offset + coords[K - 1];
-            let voxel_idx = if tables[leaf_slot] == SENTINEL {
+            let voxel_idx = if tables[leaf_slot] == I::SENTINEL {
                 let idx = voxel_points.len();
                 voxel_points.push(Vec::new());
                 voxel_aabbs.push(Aabb::EMPTY);
-                tables[leaf_slot] = u32::try_from(idx).map_err(|_| NewMvtError::TooManyVoxels)?;
+                tables[leaf_slot] = I::from_usize(idx).ok_or(NewMvtError::TooManyVoxels)?;
                 idx
             } else {
-                tables[leaf_slot] as usize
+                tables[leaf_slot].to_usize()
             };
 
             voxel_points[voxel_idx].push(*p);
@@ -498,46 +566,41 @@ impl<const K: usize, A: Axis> Mvt<K, A> {
     fn flatten_points(
         voxel_points: Vec<Vec<[A; K]>>,
         voxel_aabbs: Vec<Aabb<A, K>>,
-    ) -> Result<(Vec<Voxel<A, K>>, Vec<A>), NewMvtError> {
-        let k_u32 = u32::try_from(K).map_err(|_| NewMvtError::TooManyVoxels)?;
+    ) -> Result<FlattenedVoxels<A, I, K>, NewMvtError> {
         let total_points: usize = voxel_points.iter().map(Vec::len).sum();
         let mut pool = vec![A::ZERO; total_points * K];
         let mut voxels = Vec::with_capacity(voxel_points.len());
-        let mut offset = 0u32;
+        let mut offset = 0usize;
         for (pts, aabb) in voxel_points.into_iter().zip(voxel_aabbs) {
-            let count = u32::try_from(pts.len()).map_err(|_| NewMvtError::TooManyVoxels)?;
-            for (k, coord_pool) in pool[offset as usize..]
-                .chunks_mut(count as usize)
-                .take(K)
-                .enumerate()
-            {
+            let count = pts.len();
+            for (k, coord_pool) in pool[offset..].chunks_mut(count).take(K).enumerate() {
                 for (dst, p) in coord_pool.iter_mut().zip(&pts) {
                     *dst = p[k];
                 }
             }
             voxels.push(Voxel {
                 aabb,
-                offset,
-                count,
+                offset: I::from_usize(offset).ok_or(NewMvtError::TooManyVoxels)?,
+                count: I::from_usize(count).ok_or(NewMvtError::TooManyVoxels)?,
             });
-            offset += count * k_u32;
+            offset += count * K;
         }
 
         Ok((voxels, pool))
     }
 
     /// Look up the voxel containing grid coordinates `coords`, if it is occupied.
-    fn lookup_voxel(&self, coords: &[usize; K]) -> Option<&Voxel<A, K>> {
+    fn lookup_voxel(&self, coords: &[usize; K]) -> Option<&Voxel<A, I, K>> {
         let mut table_offset = 0usize;
         for &coord in &coords[..K - 1] {
             let next = self.tables[table_offset + coord];
-            if next == SENTINEL {
+            if next == I::SENTINEL {
                 return None;
             }
-            table_offset = next as usize;
+            table_offset = next.to_usize();
         }
         let leaf = self.tables[table_offset + coords[K - 1]];
-        (leaf != SENTINEL).then(|| &self.voxels[leaf as usize])
+        (leaf != I::SENTINEL).then(|| &self.voxels[leaf.to_usize()])
     }
 
     #[must_use]
@@ -565,7 +628,7 @@ impl<const K: usize, A: Axis> Mvt<K, A> {
         let mut bmin = [0usize; K];
         let mut bmax = [0usize; K];
         for k in 0..K {
-            let grid_max = self.grid_width[k] as usize - 1;
+            let grid_max = self.grid_width[k].to_usize() - 1;
             // theoretically has epsilon-scale errors, but is ok
             let rg = r * self.scale[k];
             let v = (center[k] - self.global_aabb.lo[k]) * self.scale[k];
@@ -578,8 +641,8 @@ impl<const K: usize, A: Axis> Mvt<K, A> {
             if let Some(voxel) = self.lookup_voxel(&coords)
                 && voxel.aabb.closest_distsq_to(center) <= rsq
             {
-                let base = voxel.offset as usize;
-                let count = voxel.count as usize;
+                let base = voxel.offset.to_usize();
+                let count = voxel.count.to_usize();
                 for i in 0..count {
                     let mut distsq = A::ZERO;
                     for (k, &c) in center.iter().enumerate() {
@@ -619,8 +682,8 @@ impl<const K: usize, A: Axis> Mvt<K, A> {
     /// ```
     pub fn points(&self) -> impl Iterator<Item = [A; K]> + '_ {
         self.voxels.iter().flat_map(move |v| {
-            let base = v.offset as usize;
-            let count = v.count as usize;
+            let base = v.offset.to_usize();
+            let count = v.count.to_usize();
             (0..count).map(move |i| array::from_fn(|k| self.points[base + k * count + i]))
         })
     }
@@ -631,8 +694,8 @@ impl<const K: usize, A: Axis> Mvt<K, A> {
     /// This function should not be considered stable; it is only used internally for benchmarks.
     pub fn memory_used(&self) -> usize {
         size_of::<Self>()
-            + self.tables.len() * size_of::<u32>()
-            + self.voxels.len() * size_of::<Voxel<A, K>>()
+            + self.tables.len() * size_of::<I>()
+            + self.voxels.len() * size_of::<Voxel<A, I, K>>()
             + self.points.len() * size_of::<A>()
     }
 }
@@ -697,6 +760,34 @@ mod tests {
         let mvt = Mvt::<2>::with_point_radius(&points, r_max, 0.5);
         assert!(mvt.collides(&[0.6, 0.0], 0.2));
         assert!(!mvt.collides(&[0.6, 0.0], 0.05));
+    }
+
+    #[test]
+    fn custom_index_type() {
+        const R: f32 = 0.04;
+        let points = [[0.0, 0.1], [0.4, -0.2], [-0.2, -0.1]];
+        let mut rng = SmallRng::seed_from_u64(1234);
+        let t: Mvt<2, f32, u16> = Mvt::new(&points, R);
+
+        for _ in 0..10_000 {
+            let p = [rng.random_range(-1.0..1.0), rng.random_range(-1.0..1.0)];
+            let collides = points.iter().any(|&a| distsq(a, p) <= R * R);
+            assert_eq!(collides, t.collides(&p, R), "query point {p:?}");
+        }
+    }
+
+    #[test]
+    fn too_many_voxels_for_index_type() {
+        // 300 points, each spaced far enough apart to land in its own voxel: more than `u8` (with
+        // its top value reserved as a sentinel) can index.
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "loop index is tiny relative to f32's mantissa"
+        )]
+        let points: Vec<[f32; 2]> = (0..300_i32).map(|i| [i as f32 * 10.0, 0.0]).collect();
+
+        let result = Mvt::<2, f32, u8>::try_new(&points, 0.1);
+        assert_eq!(result.unwrap_err(), NewMvtError::TooManyVoxels);
     }
 
     #[test]

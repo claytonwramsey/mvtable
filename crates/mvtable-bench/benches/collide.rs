@@ -24,9 +24,7 @@ fn mixed_queries(rng: &mut SmallRng, n: usize) -> Vec<([f32; 3], f32)> {
         .collect()
 }
 
-/// Queries centered exactly on existing points, so every query is guaranteed to collide. This
-/// is the case a center-out voxel search order should help most: the colliding point is always
-/// in the voxel containing the query center.
+/// Queries centered exactly on existing points, so every query is guaranteed to collide.
 fn colliding_queries(points: &[[f32; 3]], rng: &mut SmallRng, n: usize) -> Vec<([f32; 3], f32)> {
     (0..n)
         .map(|_| (points[rng.random_range(0..points.len())], R_MAX / 2.0))
@@ -35,8 +33,7 @@ fn colliding_queries(points: &[[f32; 3]], rng: &mut SmallRng, n: usize) -> Vec<(
 
 /// Queries with a zero radius at fresh, independently-drawn random centers. Since the point
 /// cloud and the query centers are both continuous random draws, the probability of an exact
-/// coincidence is zero, so this trace never collides: the search block must always be scanned
-/// in full, regardless of order.
+/// coincidence is zero.
 fn non_colliding_queries(rng: &mut SmallRng, n: usize) -> Vec<([f32; 3], f32)> {
     (0..n)
         .map(|_| {
