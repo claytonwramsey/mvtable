@@ -2,7 +2,13 @@
 name = "mvtree"
 version = "0.1.0"
 edition = "2024"
+description = "Multilevel voxel table for fast point cloud collision checking"
 
 [dependencies]
 
-[features = ["std"]]
+[dev-dependencies]
+rand = { version = "0.10", default-features = false }
+
+[features]
+default = ["std"]
+std = []
