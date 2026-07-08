@@ -1,5 +1,3 @@
-//! # Multilevel Voxel Tables: Cache-Friendly Point Cloud Collision Checking
-//!
 //! This is a Rust implementation of the *multilevel voxel table* (MVT), a data structure
 //! for fast collision checking between spheres and
 //! point clouds.
@@ -51,7 +49,7 @@
 //!
 //! This crate exposes one feature, `simd`, which enables a SIMD-parallel interface for querying
 //! [`Mvt`]s. The `simd` feature requires nightly Rust and therefore should be considered
-//! unstable. This enables the function [`Mvt::collides_simd`], a parallel collision checker for
+//! unstable. This enables the function `Mvt::collides_simd`, a parallel collision checker for
 //! batches of search queries.
 #![cfg_attr(not(feature = "std"), no_std)]
 #![cfg_attr(feature = "simd", feature(portable_simd))]
@@ -82,6 +80,16 @@ use core::simd::{
 ///
 /// An array of `Axis` values is a point that can be stored in an [`Mvt`]. This trait is
 /// implemented for `f32` and `f64`.
+///
+/// # Examples
+///
+/// ```
+/// use mvtable::Axis;
+///
+/// assert_eq!(f32::ZERO, 0.0);
+/// assert!(!f32::INFINITY.is_finite());
+/// assert_eq!(2.0_f32.square(), 4.0);
+/// ```
 pub trait Axis:
     Copy
     + PartialOrd
@@ -98,10 +106,12 @@ pub trait Axis:
     const NEG_INFINITY: Self;
 
     #[must_use]
+    #[expect(rustdoc::missing_doc_code_examples)]
     /// Determine whether this value is finite.
     fn is_finite(self) -> bool;
 
     #[must_use]
+    #[expect(rustdoc::missing_doc_code_examples)]
     /// Compute the square of this value.
     fn square(self) -> Self;
 
@@ -110,14 +120,25 @@ pub trait Axis:
     ///
     /// Values less than zero saturate to `0`, and values that are too large to be represented
     /// saturate to [`usize::MAX`].
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use mvtable::Axis;
+    ///
+    /// assert_eq!(3.7_f32.to_index(), 3);
+    /// assert_eq!((-1.0_f32).to_index(), 0);
+    /// ```
     fn to_index(self) -> usize;
 
     #[must_use]
+    #[expect(rustdoc::missing_doc_code_examples)]
     /// Convert a grid width into an axis value.
     fn from_usize(x: usize) -> Self;
 }
 
 #[cfg(feature = "simd")]
+#[expect(rustdoc::missing_doc_code_examples)]
 /// A trait used for SIMD elements, implemented for the same types that implement [`Axis`].
 ///
 /// This trait (and [`Mvt::collides_simd`], which requires it) is only available when the `simd`
@@ -130,18 +151,34 @@ pub trait AxisSimdElement: SimdElement + Default + Axis {}
 ///
 /// The interface for this trait should be considered unstable since the standard SIMD API may
 /// change with Rust versions.
+///
+/// # Examples
+///
+/// ```
+/// #![feature(portable_simd)]
+/// use std::simd::{Simd, cmp::SimdPartialEq};
+///
+/// use mvtable::AxisSimd;
+///
+/// let a = Simd::from_array([1.0f32, 2.0, 3.0, 4.0]);
+/// let mask = a.simd_eq(Simd::splat(2.0));
+/// assert!(Simd::<f32, 4>::mask_any(mask));
+/// ```
 pub trait AxisSimd<const L: usize>:
     Sized + SimdPartialOrd + Add<Output = Self> + AddAssign + Sub<Output = Self> + Mul<Output = Self>
 {
     #[must_use]
+    #[expect(rustdoc::missing_doc_code_examples)]
     /// Determine whether a mask contains any true elements.
     fn mask_any(mask: <Self as SimdPartialEq>::Mask) -> bool;
 
     #[must_use]
+    #[expect(rustdoc::missing_doc_code_examples)]
     /// Choose, lane by lane, between `true_val` and `false_val` according to `mask`.
     fn select(mask: <Self as SimdPartialEq>::Mask, true_val: Self, false_val: Self) -> Self;
 
     #[must_use]
+    #[expect(rustdoc::missing_doc_code_examples)]
     /// Convert a mask into a per-lane array of `bool`s.
     fn mask_to_array(mask: <Self as SimdPartialEq>::Mask) -> [bool; L];
 }
@@ -211,6 +248,18 @@ impl_axis!(f64);
 /// This is implemented so that [`Mvt`]s can use smaller index types (such as [`u16`] or [`u32`])
 /// for improved memory density, at the cost of supporting fewer voxels and points. This trait is
 /// implemented for [`u8`], [`u16`], [`u32`], [`u64`], and [`usize`].
+///
+/// # Examples
+///
+/// ```
+/// use mvtable::Index;
+///
+/// assert_eq!(u32::from_usize(5), Some(5));
+/// assert_eq!(5u32.to_usize(), 5);
+///
+/// // `u8` can't represent every `usize`, so out-of-range values convert to `None`.
+/// assert_eq!(u8::from_usize(1_000), None);
+/// ```
 pub trait Index: Copy + PartialEq {
     /// The zero index.
     const ZERO: Self;
@@ -219,11 +268,13 @@ pub trait Index: Copy + PartialEq {
     const SENTINEL: Self;
 
     #[must_use]
+    #[expect(rustdoc::missing_doc_code_examples)]
     /// Convert a `usize` into an index, or `None` if it doesn't fit (or happens to equal
     /// [`Index::SENTINEL`]).
     fn from_usize(x: usize) -> Option<Self>;
 
     #[must_use]
+    #[expect(rustdoc::missing_doc_code_examples)]
     /// Convert this index back into a `usize`.
     fn to_usize(self) -> usize;
 }
@@ -356,6 +407,14 @@ type FlattenedVoxels<A, I, const K: usize> = (Vec<Voxel<A, I, K>>, Vec<A>);
 #[non_exhaustive]
 #[derive(Clone, Debug, PartialEq, Eq)]
 /// The errors that can occur when calling [`Mvt::try_new`] or [`Mvt::try_with_point_radius`].
+///
+/// # Examples
+///
+/// ```
+/// let points = [[0.0]];
+/// let err = mvtable::Mvt::<1>::try_new(&points, -1.0).unwrap_err();
+/// assert_eq!(err, mvtable::NewMvtError::InvalidRadius);
+/// ```
 pub enum NewMvtError {
     /// At least one of the points had a non-finite value.
     NonFinite,
