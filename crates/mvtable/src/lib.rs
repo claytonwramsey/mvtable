@@ -46,7 +46,15 @@
 //! let radius1 = 1.5;
 //! assert!(mvt.collides(&center, radius1));
 //! ```
+//!
+//! ## Optional features
+//!
+//! This crate exposes one feature, `simd`, which enables a SIMD-parallel interface for querying
+//! [`Mvt`]s. The `simd` feature requires nightly Rust and therefore should be considered
+//! unstable. This enables the function [`Mvt::collides_simd`], a parallel collision checker for
+//! batches of search queries.
 #![cfg_attr(not(feature = "std"), no_std)]
+#![cfg_attr(feature = "simd", feature(portable_simd))]
 #![warn(clippy::pedantic, clippy::nursery)]
 #![warn(clippy::allow_attributes, reason = "prefer expect over allow")]
 #![cfg_attr(doc, feature(rustdoc_missing_doc_code_examples))]
@@ -59,6 +67,14 @@ use core::{
     array,
     mem::size_of,
     ops::{Add, Div, Mul, Sub},
+};
+
+#[cfg(feature = "simd")]
+use core::ops::AddAssign;
+#[cfg(feature = "simd")]
+use core::simd::{
+    Select, Simd, SimdElement,
+    cmp::{SimdPartialEq, SimdPartialOrd},
 };
 
 /// A generic trait representing values that may be used as an axis; that is, elements of a
@@ -101,6 +117,35 @@ pub trait Axis:
     fn from_usize(x: usize) -> Self;
 }
 
+#[cfg(feature = "simd")]
+/// A trait used for SIMD elements, implemented for the same types that implement [`Axis`].
+///
+/// This trait (and [`Mvt::collides_simd`], which requires it) is only available when the `simd`
+/// feature is enabled, which requires a nightly compiler.
+pub trait AxisSimdElement: SimdElement + Default + Axis {}
+
+#[cfg(feature = "simd")]
+/// A trait used for masks over SIMD vectors of [`Axis`] values, used for parallel querying on
+/// [`Mvt`]s.
+///
+/// The interface for this trait should be considered unstable since the standard SIMD API may
+/// change with Rust versions.
+pub trait AxisSimd<const L: usize>:
+    Sized + SimdPartialOrd + Add<Output = Self> + AddAssign + Sub<Output = Self> + Mul<Output = Self>
+{
+    #[must_use]
+    /// Determine whether a mask contains any true elements.
+    fn mask_any(mask: <Self as SimdPartialEq>::Mask) -> bool;
+
+    #[must_use]
+    /// Choose, lane by lane, between `true_val` and `false_val` according to `mask`.
+    fn select(mask: <Self as SimdPartialEq>::Mask, true_val: Self, false_val: Self) -> Self;
+
+    #[must_use]
+    /// Convert a mask into a per-lane array of `bool`s.
+    fn mask_to_array(mask: <Self as SimdPartialEq>::Mask) -> [bool; L];
+}
+
 macro_rules! impl_axis {
     ($t: ty) => {
         impl Axis for $t {
@@ -131,6 +176,28 @@ macro_rules! impl_axis {
             )]
             fn from_usize(x: usize) -> Self {
                 x as $t
+            }
+        }
+
+        #[cfg(feature = "simd")]
+        impl AxisSimdElement for $t {}
+
+        #[cfg(feature = "simd")]
+        impl<const L: usize> AxisSimd<L> for Simd<$t, L> {
+            fn mask_any(mask: <Self as SimdPartialEq>::Mask) -> bool {
+                mask.any()
+            }
+
+            fn select(
+                mask: <Self as SimdPartialEq>::Mask,
+                true_val: Self,
+                false_val: Self,
+            ) -> Self {
+                mask.select(true_val, false_val)
+            }
+
+            fn mask_to_array(mask: <Self as SimdPartialEq>::Mask) -> [bool; L] {
+                mask.to_array()
             }
         }
     };
@@ -624,6 +691,36 @@ impl<const K: usize, A: Axis, I: Index> Mvt<K, A, I> {
         if self.global_aabb.closest_distsq_to(center) > rsq {
             return false;
         }
+        self.search_block(center, r, |voxel| {
+            let base = voxel.offset.to_usize();
+            let count = voxel.count.to_usize();
+            (0..count).any(|i| {
+                let mut distsq = A::ZERO;
+                for (k, &c) in center.iter().enumerate() {
+                    let diff = self.points[base + k * count + i] - c;
+                    distsq = distsq + diff.square();
+                }
+                distsq <= rsq
+            })
+        })
+    }
+
+    /// Search the block of voxels that could contain a point within `r` (already including
+    /// `r_point`) of `center`, calling `check_voxel` on each voxel whose local AABB could contain
+    /// such a point. Returns `true` as soon as `check_voxel` does, and `false` if every voxel in
+    /// the block has been checked without one returning `true`.
+    ///
+    /// The caller is responsible for having already checked that the query sphere intersects the
+    /// global bounding box over the whole point cloud; this function does not repeat that check,
+    /// since a batched SIMD caller may have already performed an equivalent check for every lane
+    /// in the batch at once.
+    fn search_block(
+        &self,
+        center: &[A; K],
+        r: A,
+        check_voxel: impl Fn(&Voxel<A, I, K>) -> bool,
+    ) -> bool {
+        let rsq = r.square();
 
         let mut bmin = [0usize; K];
         let mut bmax = [0usize; K];
@@ -640,19 +737,9 @@ impl<const K: usize, A: Axis, I: Index> Mvt<K, A, I> {
         loop {
             if let Some(voxel) = self.lookup_voxel(&coords)
                 && voxel.aabb.closest_distsq_to(center) <= rsq
+                && check_voxel(voxel)
             {
-                let base = voxel.offset.to_usize();
-                let count = voxel.count.to_usize();
-                for i in 0..count {
-                    let mut distsq = A::ZERO;
-                    for (k, &c) in center.iter().enumerate() {
-                        let diff = self.points[base + k * count + i] - c;
-                        distsq = distsq + diff.square();
-                    }
-                    if distsq <= rsq {
-                        return true;
-                    }
-                }
+                return true;
             }
 
             // odometer-style increment over the K-dimensional search block.
@@ -697,6 +784,121 @@ impl<const K: usize, A: Axis, I: Index> Mvt<K, A, I> {
             + self.tables.len() * size_of::<I>()
             + self.voxels.len() * size_of::<Voxel<A, I, K>>()
             + self.points.len() * size_of::<A>()
+    }
+}
+
+#[cfg(feature = "simd")]
+impl<const K: usize, A: AxisSimdElement, I: Index> Mvt<K, A, I> {
+    #[must_use]
+    /// Determine whether any sphere in a SIMD batch of `L` spheres intersects a point in this
+    /// table.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// #![feature(portable_simd)]
+    /// use std::simd::Simd;
+    ///
+    /// let points = [[1.0, 2.0], [1.1, 1.1]];
+    /// let mvt = mvtable::Mvt::<2>::new(&points, 0.1);
+    ///
+    /// let centers = [
+    ///     Simd::from_array([1.0, 1.1, 1.2, 1.3]), // x-positions
+    ///     Simd::from_array([1.0, 1.1, 1.2, 1.3]), // y-positions
+    /// ];
+    /// let radii = Simd::splat(0.05);
+    ///
+    /// assert!(mvt.collides_simd(&centers, radii));
+    /// ```
+    pub fn collides_simd<const L: usize>(
+        &self,
+        centers: &[Simd<A, L>; K],
+        radii: Simd<A, L>,
+    ) -> bool
+    where
+        Simd<A, L>: AxisSimd<L>,
+    {
+        if self.voxels.is_empty() {
+            return false;
+        }
+
+        let r = radii + Simd::splat(self.r_point);
+        let rsq = r * r;
+
+        // vectorized global AABB cull across the whole batch at once
+        let mut distsq = Simd::splat(A::ZERO);
+        for (k, &center) in centers.iter().enumerate() {
+            let lo = Simd::splat(self.global_aabb.lo[k]);
+            let hi = Simd::splat(self.global_aabb.hi[k]);
+            let below = center.simd_lt(lo);
+            let above = center.simd_gt(hi);
+            let clamped = Simd::<A, L>::select(below, lo, Simd::<A, L>::select(above, hi, center));
+            let diff = center - clamped;
+            distsq += diff * diff;
+        }
+        let inbounds = Simd::<A, L>::mask_to_array(distsq.simd_le(rsq));
+        if !inbounds.iter().any(|&b| b) {
+            return false;
+        }
+
+        let r_arr = r.to_array();
+        let centers_arr: [[A; L]; K] = array::from_fn(|k| centers[k].to_array());
+        (0..L).any(|lane| {
+            // this lane was already ruled out by the batched global AABB cull above.
+            if !inbounds[lane] {
+                return false;
+            }
+            let center: [A; K] = array::from_fn(|k| centers_arr[k][lane]);
+            let r_lane = r_arr[lane];
+            let rsq_lane = r_lane.square();
+            self.search_block(&center, r_lane, |voxel| {
+                let base = voxel.offset.to_usize();
+                let count = voxel.count.to_usize();
+                self.points_collide_simd::<L>(base, count, &center, rsq_lane)
+            })
+        })
+    }
+
+    /// Determine whether any of the `count` points stored at `base` in the point coordinate pool
+    /// are within a squared distance of `rsq` from `center`, checking `L` points at a time.
+    fn points_collide_simd<const L: usize>(
+        &self,
+        base: usize,
+        count: usize,
+        center: &[A; K],
+        rsq: A,
+    ) -> bool
+    where
+        Simd<A, L>: AxisSimd<L>,
+    {
+        // TODO: make voxels be SIMD-aligned to make loading efficient and avoid a check for the
+        // back elements of the voxel's collision buffer
+        let center_simd: [Simd<A, L>; K] = array::from_fn(|k| Simd::splat(center[k]));
+        let rsq_simd = Simd::splat(rsq);
+
+        let mut i = 0;
+        while i + L <= count {
+            let mut distsq = Simd::splat(A::ZERO);
+            for (k, &c) in center_simd.iter().enumerate() {
+                let chunk = Simd::from_slice(&self.points[base + k * count + i..]);
+                let diff = chunk - c;
+                distsq += diff * diff;
+            }
+            if Simd::<A, L>::mask_any(distsq.simd_le(rsq_simd)) {
+                return true;
+            }
+            i += L;
+        }
+
+        // fewer than `L` points remain: fall back to a scalar check for the remainder.
+        (i..count).any(|i| {
+            let mut distsq = A::ZERO;
+            for (k, &c) in center.iter().enumerate() {
+                let diff = self.points[base + k * count + i] - c;
+                distsq = distsq + diff.square();
+            }
+            distsq <= rsq
+        })
     }
 }
 
@@ -894,5 +1096,104 @@ mod tests {
                 .any(|&a| distsq(a, p) <= (R + 0.05) * (R + 0.05));
             assert_eq!(collides, t.collides(&p, R), "query point {p:?}");
         }
+    }
+
+    #[cfg(feature = "simd")]
+    #[test]
+    fn fuzz_simd_2d() {
+        const R: f32 = 0.04;
+        const L: usize = 8;
+        let mut rng = SmallRng::seed_from_u64(7);
+        let points: Vec<[f32; 2]> = (0..300)
+            .map(|_| [rng.random_range(-1.0..1.0), rng.random_range(-1.0..1.0)])
+            .collect();
+        let t = Mvt::<2>::new(&points, R);
+
+        for _ in 0..2_000 {
+            let batch: [[f32; L]; 2] =
+                array::from_fn(|_| array::from_fn(|_| rng.random_range(-1.5..1.5)));
+            let centers = batch.map(Simd::from_array);
+            let radii = Simd::splat(R);
+
+            let expected = (0..L).any(|lane| {
+                let p = [batch[0][lane], batch[1][lane]];
+                points.iter().any(|&a| distsq(a, p) <= R * R)
+            });
+            assert_eq!(
+                expected,
+                t.collides_simd(&centers, radii),
+                "batch {batch:?}"
+            );
+        }
+    }
+
+    #[cfg(feature = "simd")]
+    #[test]
+    fn fuzz_simd_3d_with_point_radius() {
+        const R: f32 = 0.3;
+        const R_POINT: f32 = 0.05;
+        const L: usize = 4;
+        let mut rng = SmallRng::seed_from_u64(99);
+        let points: Vec<[f32; 3]> = (0..400)
+            .map(|_| {
+                [
+                    rng.random_range(-5.0..5.0),
+                    rng.random_range(-5.0..5.0),
+                    rng.random_range(-5.0..5.0),
+                ]
+            })
+            .collect();
+        let t = Mvt::<3>::with_point_radius(&points, R, R_POINT);
+
+        for _ in 0..1_000 {
+            let batch: [[f32; L]; 3] =
+                array::from_fn(|_| array::from_fn(|_| rng.random_range(-6.0..6.0)));
+            let centers = batch.map(Simd::from_array);
+            let radii = Simd::splat(R);
+
+            let expected = (0..L).any(|lane| {
+                let p = [batch[0][lane], batch[1][lane], batch[2][lane]];
+                points
+                    .iter()
+                    .any(|&a| distsq(a, p) <= (R + R_POINT) * (R + R_POINT))
+            });
+            assert_eq!(
+                expected,
+                t.collides_simd(&centers, radii),
+                "batch {batch:?}"
+            );
+        }
+    }
+
+    #[cfg(feature = "simd")]
+    #[test]
+    fn simd_matches_scalar_exact_hit() {
+        let points = [[0.0, 0.1], [0.4, -0.2], [-0.2, -0.1]];
+        let t = Mvt::<2>::new(&points, 0.2);
+
+        // only the first lane is on a colliding query; the rest are far away.
+        let centers = [
+            Simd::from_array([0.0, 10.0, -10.0, 5.0]),
+            Simd::from_array([-0.01, 10.0, -10.0, 5.0]),
+        ];
+        let radii = Simd::splat(0.12);
+
+        assert!(t.collides_simd(&centers, radii));
+        assert!(t.collides(&[0.0, -0.01], 0.12));
+    }
+
+    #[cfg(feature = "simd")]
+    #[test]
+    fn simd_no_collision() {
+        let points = [[0.0, 0.1], [0.4, -0.2], [-0.2, -0.1]];
+        let t = Mvt::<2>::new(&points, 0.2);
+
+        let centers = [
+            Simd::from_array([10.0, -10.0, 20.0, -20.0]),
+            Simd::from_array([10.0, -10.0, 20.0, -20.0]),
+        ];
+        let radii = Simd::splat(0.1);
+
+        assert!(!t.collides_simd(&centers, radii));
     }
 }

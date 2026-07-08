@@ -12,3 +12,4 @@ rand = { version = "0.10", default-features = false }
 [features]
 default = ["std"]
 std = []
+simd = []
