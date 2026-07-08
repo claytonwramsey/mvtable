@@ -300,27 +300,8 @@ macro_rules! impl_index {
 impl_index!(u8);
 impl_index!(u16);
 impl_index!(u32);
+impl_index!(u64);
 impl_index!(usize);
-
-impl Index for u64 {
-    const ZERO: Self = 0;
-    const SENTINEL: Self = Self::MAX;
-
-    fn from_usize(x: usize) -> Option<Self> {
-        let v = Self::try_from(x).ok()?;
-        (v != Self::SENTINEL).then_some(v)
-    }
-
-    #[expect(
-        clippy::cast_possible_truncation,
-        reason = "every index was itself produced by `from_usize` on this same platform, so it \
-                  is always small enough to convert back into a usize, even though usize could \
-                  in principle be narrower than u64 on some other platform"
-    )]
-    fn to_usize(self) -> usize {
-        self as usize
-    }
-}
 
 /// An axis-aligned bounding box, used both as a global bound on the point cloud and as a local
 /// bound on the points contained by a single voxel.
