@@ -1,0 +1,13 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[profile.bench]
+debug = true
+lto = false
+
+[profile.release]
+debug = true
+
+[profile.test]
+codegen-units = 32

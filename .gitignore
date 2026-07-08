@@ -1,0 +1,9 @@
+/target
+perf.*
+*.svg
+*.csv
+**.sas
+*.png
+
+!doc/*.svg
+!data/*.csv
