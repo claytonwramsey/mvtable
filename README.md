@@ -39,9 +39,9 @@ let mvt = Mvt::<2>::new(&points, r_max);
 Once you have an `Mvt`, you can use it for collision-checking against spheres.
 
 ```rust
-# use mvtable::Mvt;
-# let points = [[0.0, 1.1], [0.2, 3.1]];
-# let mvt = Mvt::<2>::new(&points, 2.0);
+use mvtable::Mvt;
+let points = [[0.0, 1.1], [0.2, 3.1]];
+let mvt = Mvt::<2>::new(&points, 2.0);
 let center = [0.0, 0.0]; // center of sphere
 let radius0 = 1.0; // radius of sphere
 assert!(!mvt.collides(&center, radius0));
