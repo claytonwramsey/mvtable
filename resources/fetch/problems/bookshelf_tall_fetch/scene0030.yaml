@@ -1,0 +1,176 @@
+world:
+  collision_objects:
+    - primitive_poses:
+        - orientation: [0, 0, -0.6131315415109426, 0.7899808306562983]
+          position: [-0.1711711828165955, -0.8994668522638384, 1.38]
+      id: Can1
+      header:
+        frame_id: base_link
+      primitives:
+        - type: cylinder
+          dimensions: [0.14, 0.03]
+    - primitive_poses:
+        - orientation: [0, 0, -0.6131315415109426, 0.7899808306562983]
+          position: [-0.2060482762805357, -0.7019435607072582, 1.38]
+      header:
+        frame_id: base_link
+      id: Can2
+      primitives:
+        - dimensions: [0.14, 0.03]
+          type: cylinder
+    - primitive_poses:
+        - position: [0.1819148589580014, -0.3961094439331844, 1.38]
+          orientation: [0, 0, -0.6131315415109426, 0.7899808306562983]
+      id: Can3
+      primitives:
+        - type: cylinder
+          dimensions: [0.14, 0.03]
+      header:
+        frame_id: base_link
+    - header:
+        frame_id: base_link
+      primitive_poses:
+        - position: [0.05181330982452687, -0.8423492159339756, 0.78]
+          orientation: [0, 0, -0.6131315415109426, 0.7899808306562983]
+      id: Can4
+      primitives:
+        - type: cylinder
+          dimensions: [0.14, 0.03]
+    - primitive_poses:
+        - position: [-0.191008440645896, -0.6980910961162661, 0.78]
+          orientation: [0, 0, -0.6131315415109426, 0.7899808306562983]
+      primitives:
+        - dimensions: [0.14, 0.03]
+          type: cylinder
+      id: Can5
+      header:
+        frame_id: base_link
+    - header:
+        frame_id: base_link
+      primitive_poses:
+        - position: [0.4864611701231653, -0.3180996897987164, 0.78]
+          orientation: [0, 0, -0.6131315415109426, 0.7899808306562983]
+      primitives:
+        - type: cylinder
+          dimensions: [0.14, 0.03]
+      id: Can6
+    - id: Can7
+      primitives:
+        - type: cylinder
+          dimensions: [0.14, 0.03]
+      header:
+        frame_id: base_link
+      primitive_poses:
+        - orientation: [0, 0, -0.6131315415109426, 0.7899808306562983]
+          position: [0.6098060159171377, -0.6994189875408819, 1.08]
+    - primitives:
+        - type: cylinder
+          dimensions: [0.14, 0.03]
+      id: Can8
+      primitive_poses:
+        - position: [0.2828993939328478, -0.576699267344988, 1.08]
+          orientation: [0, 0, -0.6131315415109426, 0.7899808306562983]
+      header:
+        frame_id: base_link
+    - primitive_poses:
+        - position: [0.1470958663291143, -0.4050283536510443, 1.08]
+          orientation: [0, 0, -0.6131315415109426, 0.7899808306562983]
+      header:
+        frame_id: base_link
+      id: Can9
+      primitives:
+        - type: cylinder
+          dimensions: [0.14, 0.03]
+    - header:
+        frame_id: base_link
+      id: shelf_bottom
+      primitives:
+        - type: box
+          dimensions: [1.2, 1, 0.04]
+      primitive_poses:
+        - position: [0.2320582557497348, -0.8994078868051268, 0.7]
+          orientation: [0, 0, -0.6131315415109427, 0.7899808306562983]
+    - header:
+        frame_id: base_link
+      id: shelf_middle_bottom
+      primitives:
+        - type: box
+          dimensions: [1.2, 1, 0.04]
+      primitive_poses:
+        - position: [0.2320582557497348, -0.8994078868051268, 1]
+          orientation: [0, 0, -0.6131315415109427, 0.7899808306562983]
+    - header:
+        frame_id: base_link
+      id: shelf_middle_top
+      primitives:
+        - type: box
+          dimensions: [1.2, 1, 0.04]
+      primitive_poses:
+        - position: [0.2320582557497348, -0.8994078868051268, 1.3]
+          orientation: [0, 0, -0.6131315415109427, 0.7899808306562983]
+    - header:
+        frame_id: base_link
+      id: shelf_top
+      primitives:
+        - type: box
+          dimensions: [1.2, 1, 0.04]
+      primitive_poses:
+        - position: [0.2320582557497348, -0.8994078868051268, 1.6]
+          orientation: [0, 0, -0.6131315415109427, 0.7899808306562983]
+    - header:
+        frame_id: base_link
+      id: side_left
+      primitives:
+        - type: box
+          dimensions: [1.3, 0.04, 1.64]
+      primitive_poses:
+        - position: [-0.2523039087146564, -1.023477599609542, 0.82]
+          orientation: [0, 0, -0.6131315415109427, 0.7899808306562983]
+    - header:
+        frame_id: base_link
+      id: side_right
+      primitives:
+        - type: box
+          dimensions: [1.3, 0.04, 1.64]
+      primitive_poses:
+        - position: [0.716420420214126, -0.7753381740007118, 0.82]
+          orientation: [0, 0, -0.6131315415109427, 0.7899808306562983]
+robot_model_name: fetch
+robot_state:
+  joint_state:
+    header:
+      frame_id: base_link
+    position: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    name: [l_wheel_joint, r_wheel_joint, torso_lift_joint, bellows_joint, head_pan_joint, head_tilt_joint, shoulder_pan_joint, shoulder_lift_joint, upperarm_roll_joint, elbow_flex_joint, forearm_roll_joint, wrist_flex_joint, wrist_roll_joint, l_gripper_finger_joint, r_gripper_finger_joint]
+allowed_collision_matrix:
+  entry_names: [base_link, bellows_link, bellows_link2, elbow_flex_link, estop_link, forearm_roll_link, gripper_link, head_pan_link, head_tilt_link, l_gripper_finger_link, l_wheel_link, laser_link, r_gripper_finger_link, r_wheel_link, shoulder_lift_link, shoulder_pan_link, torso_fixed_link, torso_lift_link, upperarm_roll_link, wrist_flex_link, wrist_roll_link]
+  entry_values:
+    - [false, true, true, false, true, false, false, true, true, false, true, true, false, true, true, true, true, true, true, false, false]
+    - [true, false, true, true, true, false, false, true, true, false, true, true, false, true, true, true, true, true, true, false, false]
+    - [true, true, false, false, true, false, false, true, true, false, true, true, false, true, true, true, true, true, true, false, false]
+    - [false, true, false, false, true, true, true, false, false, true, true, false, true, true, true, true, false, false, true, true, true]
+    - [true, true, true, true, false, true, false, true, true, false, true, true, true, true, true, true, true, true, true, false, true]
+    - [false, false, false, true, true, false, true, false, false, true, true, false, true, false, true, true, false, false, true, true, true]
+    - [false, false, false, true, false, true, false, false, false, true, false, false, true, false, false, false, false, false, true, true, true]
+    - [true, true, true, false, true, false, false, false, true, false, true, true, false, true, true, true, true, true, false, false, false]
+    - [true, true, true, false, true, false, false, true, false, false, true, true, false, true, true, true, true, true, false, false, false]
+    - [false, false, false, true, false, true, true, false, false, false, true, false, true, false, false, false, false, false, true, true, true]
+    - [true, true, true, true, true, true, false, true, true, true, false, true, true, true, true, true, true, true, true, true, true]
+    - [true, true, true, false, true, false, false, true, true, false, true, false, true, true, true, true, true, true, true, false, false]
+    - [false, false, false, true, true, true, true, false, false, true, true, true, false, false, false, false, false, false, true, true, true]
+    - [true, true, true, true, true, false, false, true, true, false, true, true, false, false, true, true, true, true, true, false, true]
+    - [true, true, true, true, true, true, false, true, true, false, true, true, false, true, false, true, true, false, true, true, true]
+    - [true, true, true, true, true, true, false, true, true, false, true, true, false, true, true, false, true, true, false, true, false]
+    - [true, true, true, false, true, false, false, true, true, false, true, true, false, true, true, true, false, true, false, false, false]
+    - [true, true, true, false, true, false, false, true, true, false, true, true, false, true, false, true, true, false, false, false, false]
+    - [true, true, true, true, true, true, true, false, false, true, true, true, true, true, true, false, false, false, false, true, true]
+    - [false, false, false, true, false, true, true, false, false, true, true, false, true, false, true, true, false, false, true, false, true]
+    - [false, false, false, true, true, true, true, false, false, true, true, false, true, true, true, false, false, false, true, true, false]
+fixed_frame_transforms:
+  - header:
+      frame_id: base_link
+    child_frame_id: base_link
+    transform:
+      translation: [0, 0, 0]
+      rotation: [0, 0, 0, 1]
+name: ""

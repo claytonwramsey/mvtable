@@ -1,0 +1,92 @@
+name: ""
+allowed_collision_matrix:
+  entry_names: [base_link, box_link, ee_link, forearm_link, fts_robotside, fts_toolside, robotiq_85_base_link, robotiq_85_left_finger_link, robotiq_85_left_finger_tip_link, robotiq_85_left_inner_knuckle_link, robotiq_85_left_knuckle_link, robotiq_85_right_finger_link, robotiq_85_right_finger_tip_link, robotiq_85_right_inner_knuckle_link, robotiq_85_right_knuckle_link, shoulder_link, upper_arm_link, wrist_1_link, wrist_2_link, wrist_3_link]
+  entry_values:
+    - [false, true, false, false, false, false, false, false, false, false, false, false, false, false, false, true, false, false, false, false]
+    - [true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, false, false, false, false]
+    - [false, false, false, false, true, true, true, true, true, true, true, true, true, true, true, false, false, true, true, true]
+    - [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, false, false]
+    - [false, false, true, false, false, false, true, false, false, false, false, false, false, false, false, false, false, false, false, true]
+    - [false, false, true, false, false, false, true, false, false, false, false, false, false, false, false, false, false, false, false, true]
+    - [false, false, true, false, true, true, false, true, true, true, true, true, true, true, true, false, false, true, true, true]
+    - [false, false, true, false, false, false, true, false, true, true, true, true, true, true, true, false, false, true, true, true]
+    - [false, false, true, false, false, false, true, true, false, true, true, true, true, true, true, false, false, true, true, true]
+    - [false, false, true, false, false, false, true, true, true, false, true, true, true, true, true, false, false, true, true, true]
+    - [false, false, true, false, false, false, true, true, true, true, false, true, true, true, true, false, false, true, true, true]
+    - [false, false, true, false, false, false, true, true, true, true, true, false, true, true, true, false, false, true, true, true]
+    - [false, false, true, false, false, false, true, true, true, true, true, true, false, true, true, false, false, true, true, true]
+    - [false, false, true, false, false, false, true, true, true, true, true, true, true, false, true, false, false, true, true, true]
+    - [false, false, true, false, false, false, true, true, true, true, true, true, true, true, false, false, false, true, true, true]
+    - [true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, false, false, false]
+    - [false, false, false, true, false, false, false, false, false, false, false, false, false, false, false, true, false, false, false, false]
+    - [false, false, true, true, false, false, true, true, true, true, true, true, true, true, true, false, false, false, true, true]
+    - [false, false, true, false, false, false, true, true, true, true, true, true, true, true, true, false, false, true, false, true]
+    - [false, false, true, false, true, true, true, true, true, true, true, true, true, true, true, false, false, true, true, false]
+world:
+  collision_objects:
+    - primitive_poses:
+        - orientation: [0, 0, 0.6054633848198735, 0.7958731617804824]
+          position: [0.2560817111551285, 0.6733782555543614, 0.6791159199765683]
+      primitives:
+        - type: box
+          dimensions: [0.07000000000000001, 0.07000000000000001, 0.07000000000000001]
+      id: Cube1
+    - primitive_poses:
+        - orientation: [0, 0, 0.6054633848198735, 0.7958731617804824]
+          position: [0.2560817111551285, 0.6733782555543614, 0.5991159199765682]
+      id: base
+      primitives:
+        - dimensions: [0.7, 0.7, 0.04]
+          type: box
+    - primitives:
+        - dimensions: [0.04, 0.7, 0.7]
+          type: box
+      primitive_poses:
+        - orientation: [0, 0, 0.6054633848198735, 0.7958731617804824]
+          position: [0.3494715739048518, 1.010688696447595, 0.9591159199765681]
+      id: side_back
+    - primitive_poses:
+        - orientation: [0, 0, 0.6054633848198735, 0.7958731617804824]
+          position: [0.2694231201193747, 0.721565461396252, 1.309115919976568]
+      primitives:
+        - type: box
+          dimensions: [0.65, 0.65, 0.04]
+      id: side_cap
+    - id: side_frontA
+      primitive_poses:
+        - position: [0.1626918484054052, 0.3360678146611275, 0.7591159199765681]
+          orientation: [0, 0, 0.6054633848198735, 0.7958731617804824]
+      primitives:
+        - dimensions: [0.04, 0.7, 0.04]
+          type: box
+    - primitive_poses:
+        - orientation: [0, 0, 0.6054633848198735, 0.7958731617804824]
+          position: [0.1626918484054052, 0.3360678146611275, 1.059115919976568]
+      id: side_frontB
+      primitives:
+        - type: box
+          dimensions: [0.04, 0.7, 0.04]
+    - primitives:
+        - dimensions: [0.7, 0.04, 0.7]
+          type: box
+      primitive_poses:
+        - position: [0.5933921520483625, 0.5799883928046382, 0.9591159199765681]
+          orientation: [0, 0, 0.6054633848198735, 0.7958731617804824]
+      id: side_left
+    - id: side_right
+      primitive_poses:
+        - position: [-0.08122872973810547, 0.7667681183040848, 0.9591159199765681]
+          orientation: [0, 0, 0.6054633848198735, 0.7958731617804824]
+      primitives:
+        - dimensions: [0.7, 0.04, 0.7]
+          type: box
+robot_model_name: ur5_robotiq85
+fixed_frame_transforms:
+  - transform:
+      rotation: [0, 0, 0, 1]
+      translation: [0, 0, 0]
+    child_frame_id: world
+robot_state:
+  joint_state:
+    position: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    name: [shoulder_pan_joint, shoulder_lift_joint, elbow_joint, wrist_1_joint, wrist_2_joint, wrist_3_joint, robotiq_85_left_inner_knuckle_joint, robotiq_85_left_finger_tip_joint, robotiq_85_left_knuckle_joint, robotiq_85_right_inner_knuckle_joint, robotiq_85_right_finger_tip_joint, robotiq_85_right_knuckle_joint]

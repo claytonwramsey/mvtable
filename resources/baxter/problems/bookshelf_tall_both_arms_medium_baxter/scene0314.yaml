@@ -1,0 +1,172 @@
+allowed_collision_matrix:
+  entry_values:
+    - [false, true, true, true, false, false, false, false, false, false, false, false, false, false, false, false, true, true, false, false, false, true, false, true, false, false, false, false, false, false, false, false, false, false, false, false, true, true, false, false, false, true, false, true, true, true]
+    - [true, false, true, true, false, false, false, false, false, false, false, false, false, false, false, false, true, true, false, false, false, true, false, true, false, false, false, false, false, false, false, false, false, false, false, false, true, true, false, false, false, true, false, true, true, true]
+    - [true, true, false, true, false, false, false, false, false, false, false, false, false, false, false, false, true, true, false, false, false, true, false, true, false, false, false, false, false, false, false, false, false, false, false, false, true, true, false, false, false, true, false, true, true, true]
+    - [true, true, true, false, true, false, false, false, true, false, false, false, false, true, false, false, true, true, true, false, false, true, false, true, true, false, false, false, true, false, false, false, true, true, false, false, true, true, true, false, false, true, false, true, true, true]
+    - [false, false, false, true, false, true, true, false, true, true, true, false, true, true, true, true, false, false, true, true, true, false, true, false, false, false, false, false, false, false, false, false, false, true, false, false, false, false, false, false, false, false, false, true, true, false]
+    - [false, false, false, false, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false]
+    - [false, false, false, false, true, false, false, true, true, true, true, false, true, true, true, true, false, false, true, true, true, false, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false]
+    - [false, false, false, false, false, false, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false]
+    - [false, false, false, true, true, false, true, false, false, true, true, false, true, true, true, true, false, false, true, true, true, false, true, false, false, false, true, false, true, false, false, false, true, true, false, false, false, false, false, false, false, false, false, true, true, false]
+    - [false, false, false, false, true, false, true, false, true, false, true, false, true, true, true, true, false, false, false, true, true, false, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false]
+    - [false, false, false, false, true, false, true, false, true, true, false, true, true, true, true, true, false, false, true, true, true, false, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false]
+    - [false, false, false, false, false, false, false, false, false, false, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false]
+    - [false, false, false, false, true, false, true, false, true, true, true, false, false, true, true, true, false, false, true, true, true, false, true, false, false, false, false, false, false, false, false, false, false, true, false, false, false, false, false, false, false, false, false, true, true, false]
+    - [false, false, false, true, true, false, true, false, true, true, true, false, true, false, true, true, false, false, true, true, true, false, true, false, false, false, false, false, true, false, false, false, true, true, false, false, false, false, false, false, false, false, false, true, true, false]
+    - [false, false, false, false, true, false, true, false, true, true, true, false, true, true, false, true, true, true, true, true, true, true, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, false, false, true, false]
+    - [false, false, false, false, true, false, true, false, true, true, true, false, true, true, true, false, true, true, true, true, true, false, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false]
+    - [true, true, true, true, false, false, false, false, false, false, false, false, false, false, true, true, false, true, true, true, true, true, false, true, false, false, false, false, false, false, false, false, false, false, false, false, true, true, true, false, false, true, false, true, true, true]
+    - [true, true, true, true, false, false, false, false, false, false, false, false, false, false, true, true, true, false, true, true, true, true, false, true, false, false, false, false, false, false, false, false, false, false, false, false, true, true, true, false, false, true, false, true, true, true]
+    - [false, false, false, true, true, false, true, false, true, false, true, false, true, true, true, true, true, true, false, true, true, true, false, true, false, false, false, false, false, false, false, false, false, false, false, false, true, true, false, false, false, true, false, false, true, false]
+    - [false, false, false, false, true, false, true, false, true, true, true, false, true, true, true, true, true, true, true, false, true, false, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, false, false, false, false]
+    - [false, false, false, false, true, false, true, false, true, true, true, false, true, true, true, true, true, true, true, true, false, false, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false]
+    - [true, true, true, true, false, false, false, false, false, false, false, false, false, false, true, false, true, true, true, false, false, false, false, true, false, false, false, false, false, false, false, false, false, false, true, false, true, true, true, true, false, true, false, true, true, true]
+    - [false, false, false, false, true, false, true, false, true, true, true, false, true, true, true, true, false, false, false, true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false]
+    - [true, true, true, true, false, false, false, false, false, false, false, false, false, false, true, false, true, true, true, false, false, true, false, false, false, false, false, false, false, false, false, false, false, false, true, false, true, true, true, false, false, true, false, true, true, true]
+    - [false, false, false, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, false, true, true, true, false, true, true, true, true, false, false, false, true, true, false, true, true, false, false]
+    - [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false]
+    - [false, false, false, false, false, false, false, false, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, false, false, true, true, true, true, false, true, true, true, true, false, false, true, true, true, false, true, true, false, false]
+    - [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false]
+    - [false, false, false, true, false, false, false, false, true, false, false, false, false, true, false, false, false, false, false, false, false, false, false, false, true, false, true, false, false, true, true, false, true, true, true, true, false, false, true, true, true, false, true, true, true, false]
+    - [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, false, true, false, true, false, true, false, true, true, true, true, false, false, true, true, true, false, true, false, false, false]
+    - [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, false, true, false, true, true, false, true, true, true, true, true, false, false, true, true, true, false, true, false, false, false]
+    - [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false]
+    - [false, false, false, true, false, false, false, false, true, false, false, false, false, true, false, false, false, false, false, false, false, false, false, false, true, false, true, false, true, true, true, false, false, true, true, true, false, false, true, true, true, false, true, true, true, false]
+    - [false, false, false, true, true, false, false, false, true, false, false, false, true, true, false, false, false, false, false, false, false, false, false, false, true, false, true, false, true, true, true, false, true, false, true, true, false, false, true, true, true, false, true, true, true, false]
+    - [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, false, true, true, false, true, false, true, true, true, false, true, true, false, true, true, true, true, true, true, true, true, false, true, false]
+    - [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, false, true, false, true, true, true, false, true, true, true, false, true, true, true, true, true, false, true, false, false, false]
+    - [true, true, true, true, false, false, false, false, false, false, false, false, false, false, false, false, true, true, true, false, false, true, false, true, false, false, false, false, false, false, false, false, false, false, true, true, false, true, true, true, true, true, false, true, true, true]
+    - [true, true, true, true, false, false, false, false, false, false, false, false, false, false, false, false, true, true, true, false, false, true, false, true, false, false, false, false, false, false, false, false, false, false, true, true, true, false, true, true, true, true, false, true, true, true]
+    - [false, false, false, true, false, false, false, false, false, false, false, false, false, false, false, false, true, true, false, false, false, true, false, true, false, false, true, false, true, true, true, false, true, true, true, true, true, true, false, true, true, true, false, false, true, false]
+    - [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, false, false, true, false, true, false, true, true, true, false, true, true, true, true, true, true, true, false, true, false, true, false, false, false]
+    - [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, false, true, false, true, true, true, false, true, true, true, true, true, true, true, true, false, false, true, false, false, false]
+    - [true, true, true, true, false, false, false, false, false, false, false, false, false, false, true, false, true, true, true, true, false, true, false, true, false, false, false, false, false, false, false, false, false, false, true, false, true, true, true, false, false, false, false, true, true, true]
+    - [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, false, true, false, true, true, true, false, true, true, true, true, false, false, false, true, true, false, false, false, false, false]
+    - [true, true, true, true, true, false, false, false, true, false, false, false, true, true, false, false, true, true, false, false, false, true, false, true, true, false, true, false, true, false, false, false, true, true, false, false, true, true, false, false, false, true, false, false, true, true]
+    - [true, true, true, true, true, false, false, false, true, false, false, false, true, true, true, false, true, true, true, false, false, true, false, true, false, false, false, false, true, false, false, false, true, true, true, false, true, true, true, false, false, true, false, true, false, true]
+    - [true, true, true, true, false, false, false, false, false, false, false, false, false, false, false, false, true, true, false, false, false, true, false, true, false, false, false, false, false, false, false, false, false, false, false, false, true, true, false, false, false, true, false, true, true, false]
+  entry_names: [collision_head_link_1, collision_head_link_2, display, head, l_gripper_l_finger, l_gripper_l_finger_tip, l_gripper_r_finger, l_gripper_r_finger_tip, left_gripper, left_gripper_base, left_hand, left_hand_accelerometer, left_hand_camera, left_hand_range, left_lower_elbow, left_lower_forearm, left_lower_shoulder, left_upper_elbow, left_upper_elbow_visual, left_upper_forearm, left_upper_forearm_visual, left_upper_shoulder, left_wrist, pedestal, r_gripper_l_finger, r_gripper_l_finger_tip, r_gripper_r_finger, r_gripper_r_finger_tip, right_gripper, right_gripper_base, right_hand, right_hand_accelerometer, right_hand_camera, right_hand_range, right_lower_elbow, right_lower_forearm, right_lower_shoulder, right_upper_elbow, right_upper_elbow_visual, right_upper_forearm, right_upper_forearm_visual, right_upper_shoulder, right_wrist, screen, sonar_ring, torso]
+robot_model_name: baxter
+world:
+  collision_objects:
+    - id: Can1
+      primitives:
+        - type: cylinder
+          dimensions: [0.14, 0.03]
+      primitive_poses:
+        - position: [1.348423100352949, 0.01463508174195949, 0.7548709209419995]
+          orientation: [0, 0, 0, 1]
+    - id: Can2
+      primitives:
+        - type: cylinder
+          dimensions: [0.14, 0.03]
+      primitive_poses:
+        - position: [1.148423100352949, -0.1337446218973364, 0.7548709209419995]
+          orientation: [0, 0, 0, 1]
+    - id: Can3
+      primitives:
+        - type: cylinder
+          dimensions: [0.14, 0.03]
+      primitive_poses:
+        - position: [0.9484231003529493, 0.07467134743804443, 0.7548709209419995]
+          orientation: [0, 0, 0, 1]
+    - id: Can4
+      primitives:
+        - type: cylinder
+          dimensions: [0.14, 0.03]
+      primitive_poses:
+        - position: [1.348423100352949, 0.06588040700649528, 0.1548709209419996]
+          orientation: [0, 0, 0, 1]
+    - id: Can5
+      primitives:
+        - type: cylinder
+          dimensions: [0.14, 0.03]
+      primitive_poses:
+        - position: [1.148423100352949, -0.291002711733942, 0.1548709209419996]
+          orientation: [0, 0, 0, 1]
+    - id: Can6
+      primitives:
+        - type: cylinder
+          dimensions: [0.14, 0.03]
+      primitive_poses:
+        - position: [0.9484231003529493, 0.07387006488475378, 0.1548709209419996]
+          orientation: [0, 0, 0, 1]
+    - id: Can7
+      primitives:
+        - type: cylinder
+          dimensions: [0.14, 0.03]
+      primitive_poses:
+        - position: [1.348423100352949, -0.2246295067025678, 0.4548709209419997]
+          orientation: [0, 0, 0, 1]
+    - id: Can8
+      primitives:
+        - type: cylinder
+          dimensions: [0.14, 0.03]
+      primitive_poses:
+        - position: [1.148423100352949, -0.2448924058750075, 0.4548709209419997]
+          orientation: [0, 0, 0, 1]
+    - id: Can9
+      primitives:
+        - type: cylinder
+          dimensions: [0.14, 0.03]
+      primitive_poses:
+        - position: [0.9484231003529493, 0.139258589357482, 0.4548709209419997]
+          orientation: [0, 0, 0, 1]
+    - id: shelf_bottom
+      primitives:
+        - type: box
+          dimensions: [1.2, 1, 0.04]
+      primitive_poses:
+        - position: [1.448423100352949, 0.08313721763896259, 0.07487092094199954]
+          orientation: [0, 0, 0, 1]
+    - id: shelf_middle_bottom
+      primitives:
+        - type: box
+          dimensions: [1.2, 1, 0.04]
+      primitive_poses:
+        - position: [1.448423100352949, 0.08313721763896259, 0.3748709209419996]
+          orientation: [0, 0, 0, 1]
+    - id: shelf_middle_top
+      primitives:
+        - type: box
+          dimensions: [1.2, 1, 0.04]
+      primitive_poses:
+        - position: [1.448423100352949, 0.08313721763896259, 0.6748709209419996]
+          orientation: [0, 0, 0, 1]
+    - id: shelf_top
+      primitives:
+        - type: box
+          dimensions: [1.2, 1, 0.04]
+      primitive_poses:
+        - position: [1.448423100352949, 0.08313721763896259, 0.9748709209419997]
+          orientation: [0, 0, 0, 1]
+    - id: side_left
+      primitives:
+        - type: box
+          dimensions: [1.3, 0.04, 1.64]
+      primitive_poses:
+        - position: [1.448423100352949, -0.4168627823610374, 0.1948709209419995]
+          orientation: [0, 0, 0, 1]
+    - id: side_right
+      primitives:
+        - type: box
+          dimensions: [1.3, 0.04, 1.64]
+      primitive_poses:
+        - position: [1.448423100352949, 0.5831372176389626, 0.1948709209419995]
+          orientation: [0, 0, 0, 1]
+robot_state:
+  joint_state:
+    name: [head_pan, left_s0, left_s1, left_e0, left_e1, left_w0, left_w1, left_w2, l_gripper_l_finger_joint, l_gripper_r_finger_joint, right_s0, right_s1, right_e0, right_e1, right_w0, right_w1, right_w2, r_gripper_l_finger_joint, r_gripper_r_finger_joint]
+    position: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+  multi_dof_joint_state:
+    twist: []
+    joint_names: [virtual_joint]
+    wrench: []
+    transforms: [{translation: [0, 0, 0], rotation: [0, 0, 0, 1]}]
+name: ""
+fixed_frame_transforms:
+  - transform:
+      translation: [0, 0, 0]
+      rotation: [0, 0, 0, 1]
+    child_frame_id: world

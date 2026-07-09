@@ -1,0 +1,92 @@
+allowed_collision_matrix:
+  entry_names: [base_link, box_link, ee_link, forearm_link, fts_robotside, fts_toolside, robotiq_85_base_link, robotiq_85_left_finger_link, robotiq_85_left_finger_tip_link, robotiq_85_left_inner_knuckle_link, robotiq_85_left_knuckle_link, robotiq_85_right_finger_link, robotiq_85_right_finger_tip_link, robotiq_85_right_inner_knuckle_link, robotiq_85_right_knuckle_link, shoulder_link, upper_arm_link, wrist_1_link, wrist_2_link, wrist_3_link]
+  entry_values:
+    - [false, true, false, false, false, false, false, false, false, false, false, false, false, false, false, true, false, false, false, false]
+    - [true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, false, false, false, false]
+    - [false, false, false, false, true, true, true, true, true, true, true, true, true, true, true, false, false, true, true, true]
+    - [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, false, false]
+    - [false, false, true, false, false, false, true, false, false, false, false, false, false, false, false, false, false, false, false, true]
+    - [false, false, true, false, false, false, true, false, false, false, false, false, false, false, false, false, false, false, false, true]
+    - [false, false, true, false, true, true, false, true, true, true, true, true, true, true, true, false, false, true, true, true]
+    - [false, false, true, false, false, false, true, false, true, true, true, true, true, true, true, false, false, true, true, true]
+    - [false, false, true, false, false, false, true, true, false, true, true, true, true, true, true, false, false, true, true, true]
+    - [false, false, true, false, false, false, true, true, true, false, true, true, true, true, true, false, false, true, true, true]
+    - [false, false, true, false, false, false, true, true, true, true, false, true, true, true, true, false, false, true, true, true]
+    - [false, false, true, false, false, false, true, true, true, true, true, false, true, true, true, false, false, true, true, true]
+    - [false, false, true, false, false, false, true, true, true, true, true, true, false, true, true, false, false, true, true, true]
+    - [false, false, true, false, false, false, true, true, true, true, true, true, true, false, true, false, false, true, true, true]
+    - [false, false, true, false, false, false, true, true, true, true, true, true, true, true, false, false, false, true, true, true]
+    - [true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, false, false, false]
+    - [false, false, false, true, false, false, false, false, false, false, false, false, false, false, false, true, false, false, false, false]
+    - [false, false, true, true, false, false, true, true, true, true, true, true, true, true, true, false, false, false, true, true]
+    - [false, false, true, false, false, false, true, true, true, true, true, true, true, true, true, false, false, true, false, true]
+    - [false, false, true, false, true, true, true, true, true, true, true, true, true, true, true, false, false, true, true, false]
+name: ""
+robot_model_name: ur5_robotiq85
+robot_state:
+  joint_state:
+    name: [shoulder_pan_joint, shoulder_lift_joint, elbow_joint, wrist_1_joint, wrist_2_joint, wrist_3_joint, robotiq_85_left_inner_knuckle_joint, robotiq_85_left_finger_tip_joint, robotiq_85_left_knuckle_joint, robotiq_85_right_inner_knuckle_joint, robotiq_85_right_finger_tip_joint, robotiq_85_right_knuckle_joint]
+    position: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+world:
+  collision_objects:
+    - primitive_poses:
+        - position: [-0.01388265383324909, 0.857852282740925, 0.5445700415509998]
+          orientation: [0, 0, 0.712393328294482, 0.7017804113834402]
+      primitives:
+        - dimensions: [0.07000000000000001, 0.07000000000000001, 0.07000000000000001]
+          type: box
+      id: Cube1
+    - id: base
+      primitive_poses:
+        - position: [-0.01388265383324909, 0.857852282740925, 0.4645700415509997]
+          orientation: [0, 0, 0.712393328294482, 0.7017804113834402]
+      primitives:
+        - type: box
+          dimensions: [0.7, 0.7, 0.04]
+    - id: side_back
+      primitives:
+        - dimensions: [0.04, 0.7, 0.7]
+          type: box
+      primitive_poses:
+        - position: [-0.01913563177219171, 1.207812860839049, 0.8245700415509996]
+          orientation: [0, 0, 0.712393328294482, 0.7017804113834402]
+    - primitive_poses:
+        - position: [-0.01463307925309803, 0.9078466510406569, 1.174570041551]
+          orientation: [0, 0, 0.712393328294482, 0.7017804113834402]
+      id: side_cap
+      primitives:
+        - dimensions: [0.65, 0.65, 0.04]
+          type: box
+    - primitive_poses:
+        - position: [-0.008629675894306457, 0.5078917046428012, 0.6245700415509996]
+          orientation: [0, 0, 0.712393328294482, 0.7017804113834402]
+      id: side_frontA
+      primitives:
+        - dimensions: [0.04, 0.7, 0.04]
+          type: box
+    - id: side_frontB
+      primitives:
+        - type: box
+          dimensions: [0.04, 0.7, 0.04]
+      primitive_poses:
+        - orientation: [0, 0, 0.712393328294482, 0.7017804113834402]
+          position: [-0.008629675894306457, 0.5078917046428012, 0.9245700415509996]
+    - id: side_left
+      primitive_poses:
+        - position: [0.3360779242648747, 0.8631052606798677, 0.8245700415509996]
+          orientation: [0, 0, 0.712393328294482, 0.7017804113834402]
+      primitives:
+        - dimensions: [0.7, 0.04, 0.7]
+          type: box
+    - id: side_right
+      primitives:
+        - type: box
+          dimensions: [0.7, 0.04, 0.7]
+      primitive_poses:
+        - orientation: [0, 0, 0.712393328294482, 0.7017804113834402]
+          position: [-0.3638432319313729, 0.8525993048019822, 0.8245700415509996]
+fixed_frame_transforms:
+  - child_frame_id: world
+    transform:
+      translation: [0, 0, 0]
+      rotation: [0, 0, 0, 1]

@@ -1,0 +1,92 @@
+robot_model_name: ur5_robotiq85
+robot_state:
+  joint_state:
+    position: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    name: [shoulder_pan_joint, shoulder_lift_joint, elbow_joint, wrist_1_joint, wrist_2_joint, wrist_3_joint, robotiq_85_left_inner_knuckle_joint, robotiq_85_left_finger_tip_joint, robotiq_85_left_knuckle_joint, robotiq_85_right_inner_knuckle_joint, robotiq_85_right_finger_tip_joint, robotiq_85_right_knuckle_joint]
+world:
+  collision_objects:
+    - primitives:
+        - dimensions: [0.07000000000000001, 0.07000000000000001, 0.07000000000000001]
+          type: box
+      id: Cube1
+      primitive_poses:
+        - orientation: [0, 0, 0.6708931379894546, 0.7415540421295421]
+          position: [0.1632432858335257, 0.7367497155313045, 0.6472255160820459]
+    - id: base
+      primitives:
+        - type: box
+          dimensions: [0.7, 0.7, 0.04]
+      primitive_poses:
+        - orientation: [0, 0, 0.6708931379894546, 0.7415540421295421]
+          position: [0.1632432858335257, 0.7367497155313045, 0.5672255160820459]
+    - primitive_poses:
+        - orientation: [0, 0, 0.6708931379894546, 0.7415540421295421]
+          position: [0.1981749640125896, 1.085002178350441, 0.9272255160820457]
+      id: side_back
+      primitives:
+        - type: box
+          dimensions: [0.04, 0.7, 0.7]
+    - primitives:
+        - dimensions: [0.65, 0.65, 0.04]
+          type: box
+      id: side_cap
+      primitive_poses:
+        - orientation: [0, 0, 0.6708931379894546, 0.7415540421295421]
+          position: [0.1682335255733919, 0.7865000673626097, 1.277225516082046]
+    - id: side_frontA
+      primitives:
+        - type: box
+          dimensions: [0.04, 0.7, 0.04]
+      primitive_poses:
+        - orientation: [0, 0, 0.6708931379894546, 0.7415540421295421]
+          position: [0.1283116076544617, 0.3884972527121677, 0.7272255160820458]
+    - primitive_poses:
+        - position: [0.1283116076544617, 0.3884972527121677, 1.027225516082046]
+          orientation: [0, 0, 0.6708931379894546, 0.7415540421295421]
+      id: side_frontB
+      primitives:
+        - dimensions: [0.04, 0.7, 0.04]
+          type: box
+    - primitives:
+        - dimensions: [0.7, 0.04, 0.7]
+          type: box
+      primitive_poses:
+        - position: [0.5114957486526626, 0.7018180373522407, 0.9272255160820457]
+          orientation: [0, 0, 0.6708931379894546, 0.7415540421295421]
+      id: side_left
+    - primitives:
+        - type: box
+          dimensions: [0.7, 0.04, 0.7]
+      id: side_right
+      primitive_poses:
+        - orientation: [0, 0, 0.6708931379894546, 0.7415540421295421]
+          position: [-0.1850091769856113, 0.7716813937103685, 0.9272255160820457]
+allowed_collision_matrix:
+  entry_values:
+    - [false, true, false, false, false, false, false, false, false, false, false, false, false, false, false, true, false, false, false, false]
+    - [true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, false, false, false, false]
+    - [false, false, false, false, true, true, true, true, true, true, true, true, true, true, true, false, false, true, true, true]
+    - [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, false, false]
+    - [false, false, true, false, false, false, true, false, false, false, false, false, false, false, false, false, false, false, false, true]
+    - [false, false, true, false, false, false, true, false, false, false, false, false, false, false, false, false, false, false, false, true]
+    - [false, false, true, false, true, true, false, true, true, true, true, true, true, true, true, false, false, true, true, true]
+    - [false, false, true, false, false, false, true, false, true, true, true, true, true, true, true, false, false, true, true, true]
+    - [false, false, true, false, false, false, true, true, false, true, true, true, true, true, true, false, false, true, true, true]
+    - [false, false, true, false, false, false, true, true, true, false, true, true, true, true, true, false, false, true, true, true]
+    - [false, false, true, false, false, false, true, true, true, true, false, true, true, true, true, false, false, true, true, true]
+    - [false, false, true, false, false, false, true, true, true, true, true, false, true, true, true, false, false, true, true, true]
+    - [false, false, true, false, false, false, true, true, true, true, true, true, false, true, true, false, false, true, true, true]
+    - [false, false, true, false, false, false, true, true, true, true, true, true, true, false, true, false, false, true, true, true]
+    - [false, false, true, false, false, false, true, true, true, true, true, true, true, true, false, false, false, true, true, true]
+    - [true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, false, false, false]
+    - [false, false, false, true, false, false, false, false, false, false, false, false, false, false, false, true, false, false, false, false]
+    - [false, false, true, true, false, false, true, true, true, true, true, true, true, true, true, false, false, false, true, true]
+    - [false, false, true, false, false, false, true, true, true, true, true, true, true, true, true, false, false, true, false, true]
+    - [false, false, true, false, true, true, true, true, true, true, true, true, true, true, true, false, false, true, true, false]
+  entry_names: [base_link, box_link, ee_link, forearm_link, fts_robotside, fts_toolside, robotiq_85_base_link, robotiq_85_left_finger_link, robotiq_85_left_finger_tip_link, robotiq_85_left_inner_knuckle_link, robotiq_85_left_knuckle_link, robotiq_85_right_finger_link, robotiq_85_right_finger_tip_link, robotiq_85_right_inner_knuckle_link, robotiq_85_right_knuckle_link, shoulder_link, upper_arm_link, wrist_1_link, wrist_2_link, wrist_3_link]
+name: ""
+fixed_frame_transforms:
+  - transform:
+      translation: [0, 0, 0]
+      rotation: [0, 0, 0, 1]
+    child_frame_id: world

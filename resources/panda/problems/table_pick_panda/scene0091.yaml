@@ -1,0 +1,116 @@
+robot_state:
+  multi_dof_joint_state:
+    transforms: [{translation: [0, 0, 0], rotation: [0, 0, 0, 1]}]
+    joint_names: [virtual_joint]
+    wrench: []
+    twist: []
+  joint_state:
+    name: [panda_joint1, panda_joint2, panda_joint3, panda_joint4, panda_joint5, panda_joint6, panda_joint7, panda_finger_joint1, panda_finger_joint2]
+    position: [0, 0, 0, 0, 0, 0, 0, 0, 0]
+fixed_frame_transforms:
+  - transform:
+      translation: [0, 0, 0]
+      rotation: [0, 0, 0, 1]
+    child_frame_id: world
+name: ""
+robot_model_name: panda
+world:
+  collision_objects:
+    - primitives:
+        - dimensions: [0.12, 0.03]
+          type: cylinder
+      primitive_poses:
+        - orientation: [0, 0, 0.1512509473528858, 0.9884953975233545]
+          position: [0.8589634375593078, 0.3534340782206113, 0.2700911232382559]
+      id: Can1
+    - id: Cube
+      primitives:
+        - dimensions: [0.25, 0.25, 0.25]
+          type: box
+      primitive_poses:
+        - position: [0.5817813763600868, 0.7066742053085735, 0.3200911232382558]
+          orientation: [0, 0, -0.1595355395570285, 0.987192185756273]
+    - primitives:
+        - type: cylinder
+          dimensions: [0.35, 0.05]
+      id: Object1
+      primitive_poses:
+        - orientation: [0, 0, -0.1237569937201803, 0.9923125548461752]
+          position: [1.422949985666985, 0.4591265185903957, 0.3200911232382558]
+    - primitives:
+        - type: box
+          dimensions: [0.2, 0.02, 0.4]
+      primitive_poses:
+        - orientation: [0, 0, 0.8004369309458721, 0.5994169830576653]
+          position: [1.040440282159242, 0.177357418213392, 0.3700911232382559]
+      id: Object2
+    - primitive_poses:
+        - orientation: [0, 0, 0.4153330392762606, 0.9096694270368462]
+          position: [0.5460911999272063, 0.566558675282638, 0.3700911232382559]
+      id: Object3
+      primitives:
+        - type: box
+          dimensions: [0.02, 0.2, 0.4]
+    - primitive_poses:
+        - position: [0.716874689687637, 0.06657256536400058, 0.3700911232382559]
+          orientation: [0, 0, 0.3268415581474566, 0.9450791479382786]
+      primitives:
+        - type: box
+          dimensions: [0.2, 0.05, 0.35]
+      id: Object4
+    - id: Object5
+      primitives:
+        - type: box
+          dimensions: [0.2, 0.05, 0.35]
+      primitive_poses:
+        - position: [0.9970157962522274, 0.5935985916575622, 0.3700911232382559]
+          orientation: [0, 0, -0.1660229341820512, 0.9861218917180484]
+    - id: table_leg_left_back
+      primitives:
+        - type: box
+          dimensions: [0.05, 0.05, 0.7]
+      primitive_poses:
+        - position: [1.223868468071201, 1.39050748048444, -0.1799088767617442]
+          orientation: [0, 0, 0.1512509473528858, 0.9884953975233545]
+    - primitive_poses:
+        - position: [0.3650467964064624, 1.121387922891565, -0.1799088767617442]
+          orientation: [0, 0, 0.1512509473528858, 0.9884953975233545]
+      primitives:
+        - type: box
+          dimensions: [0.05, 0.05, 0.7]
+      id: table_leg_left_front
+    - id: table_leg_right_back
+      primitive_poses:
+        - position: [1.732205410191075, -0.2317112326600659, -0.1799088767617442]
+          orientation: [0, 0, 0.1512509473528858, 0.9884953975233545]
+      primitives:
+        - dimensions: [0.05, 0.05, 0.7]
+          type: box
+    - primitives:
+        - dimensions: [0.05, 0.05, 0.7]
+          type: box
+      primitive_poses:
+        - position: [0.8733837385263369, -0.5008307902529407, -0.1799088767617442]
+          orientation: [0, 0, 0.1512509473528858, 0.9884953975233545]
+      id: table_leg_right_front
+    - primitive_poses:
+        - orientation: [0, 0, 0.1512509473528858, 0.9884953975233545]
+          position: [1.048626103298769, 0.4448383451157495, 0.1700911232382558]
+      primitives:
+        - type: box
+          dimensions: [1.2, 2, 0.04]
+      id: table_top
+allowed_collision_matrix:
+  entry_names: [panda_hand, panda_leftfinger, panda_link0, panda_link1, panda_link2, panda_link3, panda_link4, panda_link5, panda_link6, panda_link7, panda_rightfinger]
+  entry_values:
+    - [false, true, false, false, false, true, true, false, true, true, true]
+    - [true, false, false, false, false, true, true, false, true, true, true]
+    - [false, false, false, true, true, true, true, false, false, false, false]
+    - [false, false, true, false, true, true, true, false, false, false, false]
+    - [false, false, true, true, false, true, true, false, true, false, false]
+    - [true, true, true, true, true, false, true, true, true, true, true]
+    - [true, true, true, true, true, true, false, true, true, true, true]
+    - [false, false, false, false, false, true, true, false, true, false, false]
+    - [true, true, false, false, true, true, true, true, false, true, true]
+    - [true, true, false, false, false, true, true, false, true, false, true]
+    - [true, true, false, false, false, true, true, false, true, true, false]

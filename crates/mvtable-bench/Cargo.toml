@@ -8,7 +8,7 @@ publish = false
 mvtable = { path = "../mvtable", features = ["simd"] }
 capt = { version = "3.1", features = ["simd"] }
 kiddo = { version = "5", default-features = false }
-rand = { version = "0.10", default-features = false }
+rand = { version = "0.10", default-features = false, features = ["alloc"] }
 
 [dev-dependencies]
 criterion = { version = "0.8", default-features = false, features = ["cargo_bench_support"] }
@@ -16,3 +16,6 @@ criterion = { version = "0.8", default-features = false, features = ["cargo_benc
 [[bench]]
 name = "collide"
 harness = false
+
+[[bin]]
+name = "mbm_bench"

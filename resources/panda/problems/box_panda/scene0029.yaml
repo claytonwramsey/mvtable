@@ -1,0 +1,81 @@
+allowed_collision_matrix:
+  entry_values:
+    - [false, true, false, false, false, true, true, false, true, true, true]
+    - [true, false, false, false, false, true, true, false, true, true, true]
+    - [false, false, false, true, true, true, true, false, false, false, false]
+    - [false, false, true, false, true, true, true, false, false, false, false]
+    - [false, false, true, true, false, true, true, false, true, false, false]
+    - [true, true, true, true, true, false, true, true, true, true, true]
+    - [true, true, true, true, true, true, false, true, true, true, true]
+    - [false, false, false, false, false, true, true, false, true, false, false]
+    - [true, true, false, false, true, true, true, true, false, true, true]
+    - [true, true, false, false, false, true, true, false, true, false, true]
+    - [true, true, false, false, false, true, true, false, true, true, false]
+  entry_names: [panda_hand, panda_leftfinger, panda_link0, panda_link1, panda_link2, panda_link3, panda_link4, panda_link5, panda_link6, panda_link7, panda_rightfinger]
+robot_state:
+  joint_state:
+    name: [panda_joint1, panda_joint2, panda_joint3, panda_joint4, panda_joint5, panda_joint6, panda_joint7, panda_finger_joint1, panda_finger_joint2]
+    position: [0, 0, 0, 0, 0, 0, 0, 0, 0]
+  multi_dof_joint_state:
+    transforms: [{rotation: [0, 0, 0, 1], translation: [0, 0, 0]}]
+    wrench: []
+    twist: []
+    joint_names: [virtual_joint]
+fixed_frame_transforms:
+  - transform:
+      translation: [0, 0, 0]
+      rotation: [0, 0, 0, 1]
+    child_frame_id: world
+world:
+  collision_objects:
+    - primitives:
+        - type: cylinder
+          dimensions: [0.14, 0.03]
+      primitive_poses:
+        - orientation: [0, 0, 0.1573087957311879, 0.9875494634627693]
+          position: [0.5332104471479352, 0.1275957260613547, -0.4191218008034734]
+      id: Can1
+    - id: base
+      primitive_poses:
+        - position: [0.5353352481746301, 0.1210954450432297, -0.5291218008034735]
+          orientation: [0, 0, 0.1573087957311879, 0.9875494634627693]
+      primitives:
+        - dimensions: [0.7, 0.7, 0.04]
+          type: box
+    - primitives:
+        - dimensions: [0.04, 0.7, 0.7]
+          type: box
+      id: side_back
+      primitive_poses:
+        - position: [0.8680130081245523, 0.229840596818846, -0.1691218008034734]
+          orientation: [0, 0, 0.1573087957311879, 0.9875494634627693]
+    - primitives:
+        - type: box
+          dimensions: [0.7, 0.7, 0.04]
+      primitive_poses:
+        - position: [0.6303860367317508, 0.1521654884076916, 0.3808781991965267]
+          orientation: [-0.06023526569343916, 0.3781435363521741, 0.1453195443883493, 0.9122836229488478]
+      id: side_cap
+    - primitives:
+        - type: box
+          dimensions: [0.04, 0.7, 0.6]
+      primitive_poses:
+        - position: [0.2026574882247077, 0.01235029326761343, -0.2691218008034735]
+          orientation: [0, 0, 0.1573087957311879, 0.9875494634627693]
+      id: side_front
+    - id: side_left
+      primitive_poses:
+        - orientation: [0, 0, 0.1573087957311879, 0.9875494634627693]
+          position: [0.6440803999502464, -0.2115823149066927, -0.1691218008034734]
+      primitives:
+        - type: box
+          dimensions: [0.7, 0.04, 0.7]
+    - primitives:
+        - type: box
+          dimensions: [0.7, 0.04, 0.7]
+      primitive_poses:
+        - position: [0.4265900963990138, 0.4537732049931521, -0.1691218008034734]
+          orientation: [0, 0, 0.1573087957311879, 0.9875494634627693]
+      id: side_right
+name: ""
+robot_model_name: panda

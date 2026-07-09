@@ -1,0 +1,92 @@
+name: ""
+robot_state:
+  joint_state:
+    position: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    name: [shoulder_pan_joint, shoulder_lift_joint, elbow_joint, wrist_1_joint, wrist_2_joint, wrist_3_joint, robotiq_85_left_inner_knuckle_joint, robotiq_85_left_finger_tip_joint, robotiq_85_left_knuckle_joint, robotiq_85_right_inner_knuckle_joint, robotiq_85_right_finger_tip_joint, robotiq_85_right_knuckle_joint]
+world:
+  collision_objects:
+    - id: Cube1
+      primitive_poses:
+        - position: [0.2665298032566289, 0.7253795860897913, 0.6465056038982352]
+          orientation: [0, 0, 0.5819013001369938, 0.8132594154996771]
+      primitives:
+        - type: box
+          dimensions: [0.07000000000000001, 0.07000000000000001, 0.07000000000000001]
+    - primitives:
+        - dimensions: [0.7, 0.7, 0.04]
+          type: box
+      primitive_poses:
+        - orientation: [0, 0, 0.5819013001369938, 0.8132594154996771]
+          position: [0.2665298032566289, 0.7253795860897913, 0.5665056038982351]
+      id: base
+    - primitive_poses:
+        - orientation: [0, 0, 0.5819013001369938, 0.8132594154996771]
+          position: [0.3795034170858422, 1.056645283949331, 0.926505603898235]
+      primitives:
+        - dimensions: [0.04, 0.7, 0.7]
+          type: box
+      id: side_back
+    - id: side_cap
+      primitives:
+        - type: box
+          dimensions: [0.65, 0.65, 0.04]
+      primitive_poses:
+        - orientation: [0, 0, 0.5819013001369938, 0.8132594154996771]
+          position: [0.2826688909465165, 0.7727032572125825, 1.276505603898235]
+    - id: side_frontA
+      primitive_poses:
+        - orientation: [0, 0, 0.5819013001369938, 0.8132594154996771]
+          position: [0.1535561894274154, 0.3941138882302517, 0.726505603898235]
+      primitives:
+        - type: box
+          dimensions: [0.04, 0.7, 0.04]
+    - primitive_poses:
+        - position: [0.1535561894274154, 0.3941138882302517, 1.026505603898235]
+          orientation: [0, 0, 0.5819013001369938, 0.8132594154996771]
+      id: side_frontB
+      primitives:
+        - type: box
+          dimensions: [0.04, 0.7, 0.04]
+    - id: side_left
+      primitive_poses:
+        - orientation: [0, 0, 0.5819013001369938, 0.8132594154996771]
+          position: [0.5977955011161685, 0.6124059722605778, 0.926505603898235]
+      primitives:
+        - type: box
+          dimensions: [0.7, 0.04, 0.7]
+    - primitive_poses:
+        - position: [-0.06473589460291077, 0.8383531999190046, 0.926505603898235]
+          orientation: [0, 0, 0.5819013001369938, 0.8132594154996771]
+      primitives:
+        - type: box
+          dimensions: [0.7, 0.04, 0.7]
+      id: side_right
+allowed_collision_matrix:
+  entry_names: [base_link, box_link, ee_link, forearm_link, fts_robotside, fts_toolside, robotiq_85_base_link, robotiq_85_left_finger_link, robotiq_85_left_finger_tip_link, robotiq_85_left_inner_knuckle_link, robotiq_85_left_knuckle_link, robotiq_85_right_finger_link, robotiq_85_right_finger_tip_link, robotiq_85_right_inner_knuckle_link, robotiq_85_right_knuckle_link, shoulder_link, upper_arm_link, wrist_1_link, wrist_2_link, wrist_3_link]
+  entry_values:
+    - [false, true, false, false, false, false, false, false, false, false, false, false, false, false, false, true, false, false, false, false]
+    - [true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, false, false, false, false]
+    - [false, false, false, false, true, true, true, true, true, true, true, true, true, true, true, false, false, true, true, true]
+    - [false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, true, false, false]
+    - [false, false, true, false, false, false, true, false, false, false, false, false, false, false, false, false, false, false, false, true]
+    - [false, false, true, false, false, false, true, false, false, false, false, false, false, false, false, false, false, false, false, true]
+    - [false, false, true, false, true, true, false, true, true, true, true, true, true, true, true, false, false, true, true, true]
+    - [false, false, true, false, false, false, true, false, true, true, true, true, true, true, true, false, false, true, true, true]
+    - [false, false, true, false, false, false, true, true, false, true, true, true, true, true, true, false, false, true, true, true]
+    - [false, false, true, false, false, false, true, true, true, false, true, true, true, true, true, false, false, true, true, true]
+    - [false, false, true, false, false, false, true, true, true, true, false, true, true, true, true, false, false, true, true, true]
+    - [false, false, true, false, false, false, true, true, true, true, true, false, true, true, true, false, false, true, true, true]
+    - [false, false, true, false, false, false, true, true, true, true, true, true, false, true, true, false, false, true, true, true]
+    - [false, false, true, false, false, false, true, true, true, true, true, true, true, false, true, false, false, true, true, true]
+    - [false, false, true, false, false, false, true, true, true, true, true, true, true, true, false, false, false, true, true, true]
+    - [true, true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, true, false, false, false]
+    - [false, false, false, true, false, false, false, false, false, false, false, false, false, false, false, true, false, false, false, false]
+    - [false, false, true, true, false, false, true, true, true, true, true, true, true, true, true, false, false, false, true, true]
+    - [false, false, true, false, false, false, true, true, true, true, true, true, true, true, true, false, false, true, false, true]
+    - [false, false, true, false, true, true, true, true, true, true, true, true, true, true, true, false, false, true, true, false]
+robot_model_name: ur5_robotiq85
+fixed_frame_transforms:
+  - transform:
+      rotation: [0, 0, 0, 1]
+      translation: [0, 0, 0]
+    child_frame_id: world

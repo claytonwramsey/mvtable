@@ -1,0 +1,230 @@
+allowed_collision_matrix:
+  entry_names: [base_link, bellows_link, bellows_link2, elbow_flex_link, estop_link, forearm_roll_link, gripper_link, head_pan_link, head_tilt_link, l_gripper_finger_link, l_wheel_link, laser_link, r_gripper_finger_link, r_wheel_link, shoulder_lift_link, shoulder_pan_link, torso_fixed_link, torso_lift_link, upperarm_roll_link, wrist_flex_link, wrist_roll_link]
+  entry_values:
+    - [false, true, true, false, true, false, false, true, true, false, true, true, false, true, true, true, true, true, true, false, false]
+    - [true, false, true, true, true, false, false, true, true, false, true, true, false, true, true, true, true, true, true, false, false]
+    - [true, true, false, false, true, false, false, true, true, false, true, true, false, true, true, true, true, true, true, false, false]
+    - [false, true, false, false, true, true, true, false, false, true, true, false, true, true, true, true, false, false, true, true, true]
+    - [true, true, true, true, false, true, false, true, true, false, true, true, true, true, true, true, true, true, true, false, true]
+    - [false, false, false, true, true, false, true, false, false, true, true, false, true, false, true, true, false, false, true, true, true]
+    - [false, false, false, true, false, true, false, false, false, true, false, false, true, false, false, false, false, false, true, true, true]
+    - [true, true, true, false, true, false, false, false, true, false, true, true, false, true, true, true, true, true, false, false, false]
+    - [true, true, true, false, true, false, false, true, false, false, true, true, false, true, true, true, true, true, false, false, false]
+    - [false, false, false, true, false, true, true, false, false, false, true, false, true, false, false, false, false, false, true, true, true]
+    - [true, true, true, true, true, true, false, true, true, true, false, true, true, true, true, true, true, true, true, true, true]
+    - [true, true, true, false, true, false, false, true, true, false, true, false, true, true, true, true, true, true, true, false, false]
+    - [false, false, false, true, true, true, true, false, false, true, true, true, false, false, false, false, false, false, true, true, true]
+    - [true, true, true, true, true, false, false, true, true, false, true, true, false, false, true, true, true, true, true, false, true]
+    - [true, true, true, true, true, true, false, true, true, false, true, true, false, true, false, true, true, false, true, true, true]
+    - [true, true, true, true, true, true, false, true, true, false, true, true, false, true, true, false, true, true, false, true, false]
+    - [true, true, true, false, true, false, false, true, true, false, true, true, false, true, true, true, false, true, false, false, false]
+    - [true, true, true, false, true, false, false, true, true, false, true, true, false, true, false, true, true, false, false, false, false]
+    - [true, true, true, true, true, true, true, false, false, true, true, true, true, true, true, false, false, false, false, true, true]
+    - [false, false, false, true, false, true, true, false, false, true, true, false, true, false, true, true, false, false, true, false, true]
+    - [false, false, false, true, true, true, true, false, false, true, true, false, true, true, true, false, false, false, true, true, false]
+world:
+  collision_objects:
+    - primitives:
+        - type: cylinder
+          dimensions: [0.14, 0.03]
+      id: Can1
+      header:
+        frame_id: base_link
+      primitive_poses:
+        - position: [0.165754923678608, 1.170468924712724, 0.44]
+          orientation: [0, 0, 0.5461267539279258, 0.8377025538006595]
+    - primitives:
+        - dimensions: [0.14, 0.03]
+          type: cylinder
+      header:
+        frame_id: base_link
+      primitive_poses:
+        - position: [0.1910170504270625, 0.8314540394077101, 1.44]
+          orientation: [0, 0, 0.5461267539279258, 0.8377025538006595]
+      id: Can10
+    - header:
+        frame_id: base_link
+      primitive_poses:
+        - position: [0.134928747851107, 0.8561879626815297, 0.44]
+          orientation: [0, 0, 0.5461267539279258, 0.8377025538006595]
+      primitives:
+        - type: cylinder
+          dimensions: [0.14, 0.03]
+      id: Can2
+    - header:
+        frame_id: base_link
+      primitives:
+        - dimensions: [0.14, 0.03]
+          type: cylinder
+      id: Can3
+      primitive_poses:
+        - position: [0.6038584518824009, 0.9772732215996199, 0.6899999999999999]
+          orientation: [0, 0, 0.5461267539279258, 0.8377025538006595]
+    - header:
+        frame_id: base_link
+      primitives:
+        - type: cylinder
+          dimensions: [0.14, 0.03]
+      primitive_poses:
+        - orientation: [0, 0, 0.5461267539279258, 0.8377025538006595]
+          position: [0.6473840887012567, 0.6302044598881984, 0.6899999999999999]
+      id: Can4
+    - id: Can5
+      header:
+        frame_id: base_link
+      primitive_poses:
+        - position: [0.1711284913536436, 1.168099278913566, 0.9399999999999999]
+          orientation: [0, 0, 0.5461267539279258, 0.8377025538006595]
+      primitives:
+        - type: cylinder
+          dimensions: [0.14, 0.03]
+    - header:
+        frame_id: base_link
+      id: Can6
+      primitives:
+        - dimensions: [0.14, 0.03]
+          type: cylinder
+      primitive_poses:
+        - orientation: [0, 0, 0.5461267539279258, 0.8377025538006595]
+          position: [0.04571953640685967, 0.8955276055275919, 0.9399999999999999]
+    - header:
+        frame_id: base_link
+      primitive_poses:
+        - position: [0.5622827691020948, 0.9956073429888735, 1.19]
+          orientation: [0, 0, 0.5461267539279258, 0.8377025538006595]
+      id: Can7
+      primitives:
+        - type: cylinder
+          dimensions: [0.14, 0.03]
+    - primitive_poses:
+        - orientation: [0, 0, 0.5461267539279258, 0.8377025538006595]
+          position: [0.6243007903903501, 0.6403837754158073, 1.19]
+      header:
+        frame_id: base_link
+      primitives:
+        - dimensions: [0.14, 0.03]
+          type: cylinder
+      id: Can8
+    - primitive_poses:
+        - orientation: [0, 0, 0.5461267539279258, 0.8377025538006595]
+          position: [0.1110014667447706, 1.194614205289614, 1.44]
+      header:
+        frame_id: base_link
+      primitives:
+        - type: cylinder
+          dimensions: [0.14, 0.03]
+      id: Can9
+    - id: leg_bl
+      header:
+        frame_id: base_link
+      primitive_poses:
+        - orientation: [0, 0, 0.5461267539279258, 0.8377025538006595]
+          position: [0.9074724742451074, 1.061968113187739, 0.82]
+      primitives:
+        - dimensions: [0.04, 0.04, 1.64]
+          type: box
+    - primitive_poses:
+        - orientation: [0, 0, 0.5461267539279258, 0.8377025538006595]
+          position: [-0.00751107868346812, 1.465459250476033, 0.82]
+      id: leg_br
+      header:
+        frame_id: base_link
+      primitives:
+        - dimensions: [0.04, 0.04, 1.64]
+          type: box
+    - primitive_poses:
+        - orientation: [0, 0, 0.5461267539279258, 0.8377025538006595]
+          position: [0.6653777918721311, 0.5129779814305938, 0.82]
+      id: leg_fl
+      primitives:
+        - dimensions: [0.04, 0.04, 1.64]
+          type: box
+      header:
+        frame_id: base_link
+    - primitives:
+        - type: box
+          dimensions: [0.04, 0.04, 1.64]
+      id: leg_fr
+      header:
+        frame_id: base_link
+      primitive_poses:
+        - orientation: [0, 0, 0.5461267539279258, 0.8377025538006595]
+          position: [-0.2496057610564443, 0.9164691187188875, 0.82]
+    - id: shelf_bottom
+      primitives:
+        - type: box
+          dimensions: [0.62, 1, 0.04]
+      primitive_poses:
+        - position: [0.3289333565943315, 0.9892186159533133, 0.35]
+          orientation: [0, 0, 0.5461267539279258, 0.8377025538006595]
+      header:
+        frame_id: base_link
+    - header:
+        frame_id: base_link
+      primitive_poses:
+        - position: [0.3289333565943315, 0.9892186159533133, 0.85]
+          orientation: [0, 0, 0.5461267539279258, 0.8377025538006595]
+      id: shelf_middle
+      primitives:
+        - type: box
+          dimensions: [0.62, 1, 0.04]
+    - primitive_poses:
+        - position: [0.3289333565943315, 0.9892186159533133, 0.6]
+          orientation: [0, 0, 0.5461267539279258, 0.8377025538006595]
+      id: shelf_middle_bottom
+      primitives:
+        - type: box
+          dimensions: [0.62, 1, 0.04]
+      header:
+        frame_id: base_link
+    - primitives:
+        - dimensions: [0.62, 1, 0.04]
+          type: box
+      primitive_poses:
+        - position: [0.3289333565943315, 0.9892186159533133, 1.1]
+          orientation: [0, 0, 0.5461267539279258, 0.8377025538006595]
+      id: shelf_middle_top
+      header:
+        frame_id: base_link
+    - id: shelf_top
+      primitives:
+        - dimensions: [0.62, 1, 0.04]
+          type: box
+      header:
+        frame_id: base_link
+      primitive_poses:
+        - orientation: [0, 0, 0.5461267539279258, 0.8377025538006595]
+          position: [0.3289333565943315, 0.9892186159533133, 1.35]
+    - header:
+        frame_id: base_link
+      primitive_poses:
+        - orientation: [0, 0, 0.5461267539279258, 0.8377025538006595]
+          position: [0.3289333565943315, 0.9892186159533133, 1.6]
+      id: shelf_top_top
+      primitives:
+        - type: box
+          dimensions: [0.62, 1, 0.04]
+    - primitives:
+        - type: box
+          dimensions: [0.62, 0.04, 1.4]
+      primitive_poses:
+        - orientation: [0, 0, 0.5461267539279258, 0.8377025538006595]
+          position: [0.3289333565943315, 0.9892186159533133, 0.9]
+      header:
+        frame_id: base_link
+      id: shelf_vert
+fixed_frame_transforms:
+  - child_frame_id: base_link
+    header:
+      frame_id: base_link
+    transform:
+      translation: [0, 0, 0]
+      rotation: [0, 0, 0, 1]
+robot_model_name: fetch
+robot_state:
+  joint_state:
+    position: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+    header:
+      frame_id: base_link
+    name: [l_wheel_joint, r_wheel_joint, torso_lift_joint, bellows_joint, head_pan_joint, head_tilt_joint, shoulder_pan_joint, shoulder_lift_joint, upperarm_roll_joint, elbow_flex_joint, forearm_roll_joint, wrist_flex_joint, wrist_roll_joint, l_gripper_finger_joint, r_gripper_finger_joint]
+name: ""

@@ -1,0 +1,36 @@
+num_planning_attempts: 2
+workspace_parameters:
+  min_corner: [-1, -1, -1]
+  max_corner: [1, 1, 1]
+  header:
+    frame_id: ""
+max_velocity_scaling_factor: 0
+allowed_planning_time: 60
+group_name: panda_arm
+planner_id: BKPIECEGood
+goal_constraints:
+  - joint_constraints:
+      - position: 2.421056640318217
+        joint_name: panda_joint1
+      - position: -0.9025855165777883
+        joint_name: panda_joint2
+      - joint_name: panda_joint3
+        position: -2.536132373838946
+      - position: -1.056528590676692
+        joint_name: panda_joint4
+      - position: -2.838430228070775
+        joint_name: panda_joint5
+      - position: 2.782074555610715
+        joint_name: panda_joint6
+      - position: 0.03888548092744654
+        joint_name: panda_joint7
+max_acceleration_scaling_factor: 0
+start_state:
+  multi_dof_joint_state:
+    joint_names: [virtual_joint]
+    transforms: [{rotation: [0, 0, 0, 1], translation: [0, 0, 0]}]
+    wrench: []
+    twist: []
+  joint_state:
+    name: [panda_joint1, panda_joint2, panda_joint3, panda_joint4, panda_joint5, panda_joint6, panda_joint7, panda_finger_joint1, panda_finger_joint2]
+    position: [2.153620903624468, -1.7628, -2.120156160872665, -1.206828985270787, 2.572257696791244, 2.26488231712419, 0.007647403604771083, 0.065, 0.065]

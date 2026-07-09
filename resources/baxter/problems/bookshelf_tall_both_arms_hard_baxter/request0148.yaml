@@ -1,0 +1,50 @@
+workspace_parameters:
+  max_corner: [1, 1, 1]
+  header:
+    frame_id: ""
+  min_corner: [-1, -1, -1]
+allowed_planning_time: 60
+planner_id: RRTConnectkConfigDefault
+max_acceleration_scaling_factor: 0
+max_velocity_scaling_factor: 0
+goal_constraints:
+  - joint_constraints:
+      - joint_name: left_s0
+        position: -0.986570502443162
+      - joint_name: left_s1
+        position: -0.9644877887731177
+      - position: -0.04190749595394092
+        joint_name: left_e0
+      - position: 1.627403841492429
+        joint_name: left_e1
+      - position: -0.3626465093960922
+        joint_name: left_w0
+      - position: -0.7107370281546576
+        joint_name: left_w1
+      - position: 0.3085571032183461
+        joint_name: left_w2
+      - position: 0.2884580338379916
+        joint_name: right_s0
+      - joint_name: right_s1
+        position: -0.07201782744460485
+      - position: 0.802318154748965
+        joint_name: right_e0
+      - position: 1.385212258312715
+        joint_name: right_e1
+      - joint_name: right_w0
+        position: -0.349117757509305
+      - joint_name: right_w1
+        position: -1.002591314808501
+      - joint_name: right_w2
+        position: -0.6533017953596023
+start_state:
+  multi_dof_joint_state:
+    transforms: [{rotation: [0, 0, 0, 1], translation: [0, 0, 0]}]
+    joint_names: [virtual_joint]
+    wrench: []
+    twist: []
+  joint_state:
+    name: [head_pan, left_s0, left_s1, left_e0, left_e1, left_w0, left_w1, left_w2, l_gripper_l_finger_joint, l_gripper_r_finger_joint, right_s0, right_s1, right_e0, right_e1, right_w0, right_w1, right_w2, r_gripper_l_finger_joint, r_gripper_r_finger_joint]
+    position: [0, -0.00345146, 0.0118884, 0.00421845, 1.39861, 0.0145728, 0.238918, 0.0007669899999999999, 0.05, -0.05, 0.00115049, 0.0145728, 0.00230097, 1.41586, -0.00115049, 0.253107, -0.18868, 0.05, -0.05]
+group_name: both_arms
+num_planning_attempts: 2

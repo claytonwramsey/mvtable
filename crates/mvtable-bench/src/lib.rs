@@ -3,18 +3,27 @@
 //!
 //! The [`Structure`] trait gives all three collision-checking structures a common
 //! construct-then-query interface, so that both `benches/collide.rs` and `tests/correctness.rs`
-//! can be written once and run against every structure.
+//! can be written once and run against every structure. [`SimdStructure`] additionally covers
+//! `mvtable` and `capt`'s SIMD-batched queries (`kiddo` has no SIMD-batched query API).
+#![feature(portable_simd)]
 
+use std::simd::Simd;
+
+use capt::AxisSimd;
 use kiddo::SquaredEuclidean;
 use rand::{Rng, RngExt};
+
+pub mod filter;
 
 /// A minimal common interface over the collision-checking structures being compared.
 pub trait Structure<const K: usize>: Sized {
     /// A short, human-readable name for this structure, used in benchmark/test output.
     const NAME: &'static str;
 
-    /// Build a new instance containing `points`, sized for queries with radius up to `r_max`.
-    fn build(points: &[[f32; K]], r_max: f32) -> Self;
+    /// Build a new instance containing `points`, sized for queries with radius in `r_range`
+    /// (`(r_min, r_max)`). Structures that don't need a lower bound (`mvtable`, `kiddo`) ignore
+    /// `r_range.0`.
+    fn build(points: &[[f32; K]], r_range: (f32, f32)) -> Self;
 
     /// Determine whether any point in the structure lies within `radius` of `center`.
     fn collides(&self, center: &[f32; K], radius: f32) -> bool;
@@ -23,8 +32,8 @@ pub trait Structure<const K: usize>: Sized {
 impl<const K: usize> Structure<K> for mvtable::Mvt<K, f32> {
     const NAME: &'static str = "mvtable";
 
-    fn build(points: &[[f32; K]], r_max: f32) -> Self {
-        Self::new(points, r_max)
+    fn build(points: &[[f32; K]], r_range: (f32, f32)) -> Self {
+        Self::new(points, r_range.1)
     }
 
     fn collides(&self, center: &[f32; K], radius: f32) -> bool {
@@ -35,8 +44,8 @@ impl<const K: usize> Structure<K> for mvtable::Mvt<K, f32> {
 impl<const K: usize> Structure<K> for capt::Capt<K, f32, u32> {
     const NAME: &'static str = "capt";
 
-    fn build(points: &[[f32; K]], r_max: f32) -> Self {
-        Self::new(points, (0.0, r_max), 1)
+    fn build(points: &[[f32; K]], r_range: (f32, f32)) -> Self {
+        Self::new(points, r_range, 1)
     }
 
     fn collides(&self, center: &[f32; K], radius: f32) -> bool {
@@ -47,7 +56,7 @@ impl<const K: usize> Structure<K> for capt::Capt<K, f32, u32> {
 impl<const K: usize> Structure<K> for kiddo::ImmutableKdTree<f32, K> {
     const NAME: &'static str = "kiddo";
 
-    fn build(points: &[[f32; K]], _r_max: f32) -> Self {
+    fn build(points: &[[f32; K]], _r_range: (f32, f32)) -> Self {
         Self::new_from_slice(points)
     }
 
@@ -57,6 +66,45 @@ impl<const K: usize> Structure<K> for kiddo::ImmutableKdTree<f32, K> {
             && !self
                 .within_unsorted::<SquaredEuclidean>(center, radius * radius)
                 .is_empty()
+    }
+}
+
+/// [`Structure`]s that additionally support SIMD-batched collision queries.
+pub trait SimdStructure<const K: usize>: Structure<K> {
+    /// Determine whether any point in the structure lies within the corresponding lane of `radii`
+    /// of the corresponding lane of `centers`.
+    fn collides_simd<const L: usize>(
+        &self,
+        centers: &[Simd<f32, L>; K],
+        radii: Simd<f32, L>,
+    ) -> bool
+    where
+        Simd<f32, L>: AxisSimd<L>;
+}
+
+impl<const K: usize> SimdStructure<K> for mvtable::Mvt<K, f32> {
+    fn collides_simd<const L: usize>(
+        &self,
+        centers: &[Simd<f32, L>; K],
+        radii: Simd<f32, L>,
+    ) -> bool
+    where
+        Simd<f32, L>: AxisSimd<L>,
+    {
+        Self::collides_simd(self, centers, radii)
+    }
+}
+
+impl<const K: usize> SimdStructure<K> for capt::Capt<K, f32, u32> {
+    fn collides_simd<const L: usize>(
+        &self,
+        centers: &[Simd<f32, L>; K],
+        radii: Simd<f32, L>,
+    ) -> bool
+    where
+        Simd<f32, L>: AxisSimd<L>,
+    {
+        Self::collides_simd(self, centers, radii)
     }
 }
 

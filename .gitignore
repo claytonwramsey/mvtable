@@ -4,6 +4,9 @@ perf.*
 *.csv
 **.sas
 *.png
+__pycache__/
 
 !doc/*.svg
 !data/*.csv
+*.bin
+data/manifest.csv

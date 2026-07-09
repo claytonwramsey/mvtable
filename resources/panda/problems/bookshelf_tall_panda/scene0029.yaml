@@ -1,0 +1,137 @@
+robot_model_name: panda
+robot_state:
+  multi_dof_joint_state:
+    joint_names: [virtual_joint]
+    wrench: []
+    twist: []
+    transforms: [{translation: [0, 0, 0], rotation: [0, 0, 0, 1]}]
+  joint_state:
+    name: [panda_joint1, panda_joint2, panda_joint3, panda_joint4, panda_joint5, panda_joint6, panda_joint7, panda_finger_joint1, panda_finger_joint2]
+    position: [0, 0, 0, 0, 0, 0, 0, 0, 0]
+fixed_frame_transforms:
+  - transform:
+      translation: [0, 0, 0]
+      rotation: [0, 0, 0, 1]
+    child_frame_id: world
+allowed_collision_matrix:
+  entry_names: [panda_hand, panda_leftfinger, panda_link0, panda_link1, panda_link2, panda_link3, panda_link4, panda_link5, panda_link6, panda_link7, panda_rightfinger]
+  entry_values:
+    - [false, true, false, false, false, true, true, false, true, true, true]
+    - [true, false, false, false, false, true, true, false, true, true, true]
+    - [false, false, false, true, true, true, true, false, false, false, false]
+    - [false, false, true, false, true, true, true, false, false, false, false]
+    - [false, false, true, true, false, true, true, false, true, false, false]
+    - [true, true, true, true, true, false, true, true, true, true, true]
+    - [true, true, true, true, true, true, false, true, true, true, true]
+    - [false, false, false, false, false, true, true, false, true, false, false]
+    - [true, true, false, false, true, true, true, true, false, true, true]
+    - [true, true, false, false, false, true, true, false, true, false, true]
+    - [true, true, false, false, false, true, true, false, true, true, false]
+name: ""
+world:
+  collision_objects:
+    - primitive_poses:
+        - position: [1.128210766162108, 0.1521235529623446, 0.6799999999999999]
+          orientation: [0, 0, 0.1039495723210121, 0.9945825689274262]
+      primitives:
+        - type: cylinder
+          dimensions: [0.14, 0.03]
+      id: Can1
+    - id: Can2
+      primitives:
+        - type: cylinder
+          dimensions: [0.14, 0.03]
+      primitive_poses:
+        - orientation: [0, 0, 0.1039495723210121, 0.9945825689274262]
+          position: [0.8487176241217349, 0.5073587915275518, 0.6799999999999999]
+    - primitives:
+        - type: cylinder
+          dimensions: [0.14, 0.03]
+      id: Can3
+      primitive_poses:
+        - position: [0.7109966200632126, 0.1917695666553563, 0.6799999999999999]
+          orientation: [0, 0, 0.1039495723210121, 0.9945825689274262]
+    - id: Can4
+      primitive_poses:
+        - orientation: [0, 0, 0.1039495723210121, 0.9945825689274262]
+          position: [1.068204688056086, 0.4360548367919496, 0.08000000000000007]
+      primitives:
+        - type: cylinder
+          dimensions: [0.14, 0.03]
+    - primitives:
+        - dimensions: [0.14, 0.03]
+          type: cylinder
+      primitive_poses:
+        - position: [0.882819292564712, 0.345999629133395, 0.08000000000000007]
+          orientation: [0, 0, 0.1039495723210121, 0.9945825689274262]
+      id: Can5
+    - id: Can6
+      primitives:
+        - type: cylinder
+          dimensions: [0.14, 0.03]
+      primitive_poses:
+        - orientation: [0, 0, 0.1039495723210121, 0.9945825689274262]
+          position: [0.727368793540577, 0.1143012104282464, 0.08000000000000007]
+    - primitive_poses:
+        - orientation: [0, 0, 0.1039495723210121, 0.9945825689274262]
+          position: [1.09241752184313, 0.3214867597021329, 0.3800000000000001]
+      primitives:
+        - type: cylinder
+          dimensions: [0.14, 0.03]
+      id: Can7
+    - id: Can8
+      primitives:
+        - type: cylinder
+          dimensions: [0.14, 0.03]
+      primitive_poses:
+        - position: [0.9339423877553916, 0.1041000331426997, 0.3800000000000001]
+          orientation: [0, 0, 0.1039495723210121, 0.9945825689274262]
+    - primitive_poses:
+        - position: [0.6955500677653955, 0.2648581530634098, 0.3800000000000001]
+          orientation: [0, 0, 0.1039495723210121, 0.9945825689274262]
+      id: Can9
+      primitives:
+        - dimensions: [0.14, 0.03]
+          type: cylinder
+    - id: shelf_bottom
+      primitive_poses:
+        - position: [1.192452879902963, 0.3317710335967954, 0]
+          orientation: [0, 0, 0.1039495723210121, 0.9945825689274262]
+      primitives:
+        - type: box
+          dimensions: [1.2, 1, 0.04]
+    - id: shelf_middle_bottom
+      primitives:
+        - dimensions: [1.2, 1, 0.04]
+          type: box
+      primitive_poses:
+        - position: [1.192452879902963, 0.3317710335967954, 0.3]
+          orientation: [0, 0, 0.1039495723210121, 0.9945825689274262]
+    - primitive_poses:
+        - position: [1.192452879902963, 0.3317710335967954, 0.6000000000000001]
+          orientation: [0, 0, 0.1039495723210121, 0.9945825689274262]
+      primitives:
+        - type: box
+          dimensions: [1.2, 1, 0.04]
+      id: shelf_middle_top
+    - id: shelf_top
+      primitives:
+        - dimensions: [1.2, 1, 0.04]
+          type: box
+      primitive_poses:
+        - position: [1.192452879902963, 0.3317710335967954, 0.9000000000000001]
+          orientation: [0, 0, 0.1039495723210121, 0.9945825689274262]
+    - primitive_poses:
+        - orientation: [0, 0, 0.1039495723210121, 0.9945825689274262]
+          position: [1.295839312580902, -0.1574234528174832, 0.12]
+      primitives:
+        - type: box
+          dimensions: [1.3, 0.04, 1.64]
+      id: side_left
+    - id: side_right
+      primitive_poses:
+        - position: [1.089066447225023, 0.8209655200110741, 0.12]
+          orientation: [0, 0, 0.1039495723210121, 0.9945825689274262]
+      primitives:
+        - dimensions: [1.3, 0.04, 1.64]
+          type: box

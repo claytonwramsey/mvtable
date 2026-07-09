@@ -1,6 +1,5 @@
 //! Construction- and query-time comparison of `mvtable` against `capt` and `kiddo`'s immutable
-//! k-d tree, across a range of point cloud sizes, plus a comparison of `mvtable`'s scalar
-//! `collides` against its SIMD-batched `collides_simd`.
+//! k-d tree.
 #![feature(portable_simd)]
 
 use std::{hint::black_box, simd::Simd};
@@ -54,7 +53,7 @@ fn bench_construction<S: Structure<3>>(
     for &n in &SIZES {
         let points: Vec<[f32; 3]> = uniform_cloud(&mut rng, n, HALF_WIDTH);
         group.bench_with_input(BenchmarkId::new(S::NAME, n), &points, |b, points| {
-            b.iter(|| black_box(S::build(points, R_MAX)));
+            b.iter(|| black_box(S::build(points, (0.0, R_MAX))));
         });
     }
 }
@@ -76,7 +75,7 @@ fn bench_query<S: Structure<3>>(
     for &n in &SIZES {
         let points: Vec<[f32; 3]> = uniform_cloud(&mut rng, n, HALF_WIDTH);
         let queries = trace_of(&points, &mut rng);
-        let structure = S::build(&points, R_MAX);
+        let structure = S::build(&points, (0.0, R_MAX));
 
         let id = BenchmarkId::new(format!("{}/{trace_name}", S::NAME), n);
         group.bench_with_input(id, &queries, |b, queries| {
@@ -133,8 +132,7 @@ fn to_simd_batches<const L: usize>(
 /// lanes to be queried with any `L` up to it.
 const MAX_L: usize = 8;
 
-/// Benchmark `mvtable`'s and `capt`'s scalar `collides`, once per trace (shared as the baseline
-/// for every SIMD lane width compared against them).
+/// Benchmark `mvtable`'s and `capt`'s scalar `collides`, once per trace.
 fn bench_scalar_query(
     group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
     trace_name: &str,

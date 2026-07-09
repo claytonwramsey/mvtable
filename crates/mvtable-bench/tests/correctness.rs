@@ -15,9 +15,9 @@ use rand::{SeedableRng, rngs::SmallRng};
 /// Build every structure over `points`/`r_max`, then check every `(center, radius)` in `queries`
 /// against the brute-force oracle, panicking with full context on any disagreement.
 fn check_all<const K: usize>(points: &[[f32; K]], r_max: f32, queries: &[([f32; K], f32)]) {
-    let mvt = mvtable::Mvt::<K, f32>::build(points, r_max);
-    let capt = capt::Capt::<K, f32, u32>::build(points, r_max);
-    let kdt = kiddo::ImmutableKdTree::<f32, K>::build(points, r_max);
+    let mvt = mvtable::Mvt::<K, f32>::build(points, (0.0, r_max));
+    let capt = capt::Capt::<K, f32, u32>::build(points, (0.0, r_max));
+    let kdt = kiddo::ImmutableKdTree::<f32, K>::build(points, (0.0, r_max));
 
     for &(center, radius) in queries {
         let expected = brute_force_collides(points, &center, radius);
@@ -44,9 +44,7 @@ fn check_all<const K: usize>(points: &[[f32; K]], r_max: f32, queries: &[([f32; 
     }
 }
 
-/// Combine a dense deterministic grid sweep with exact-on-point queries, covering both
-/// systematic coverage of the query space and the boundary cases that land precisely on a
-/// point (the sharpest possible test of the "does this point collide with itself" case).
+/// Make a sequence of queries that covers a lot of the space.
 fn sweep_queries<const K: usize>(
     points: &[[f32; K]],
     half_width: f32,
@@ -202,8 +200,8 @@ fn radius_beyond_r_max() {
     let points = uniform_cloud::<_, 3>(&mut rng, 200, 5.0);
     let r_max = 0.1;
 
-    let mvt = mvtable::Mvt::<3, f32>::build(&points, r_max);
-    let kdt = kiddo::ImmutableKdTree::<f32, 3>::build(&points, r_max);
+    let mvt = mvtable::Mvt::<3, f32>::build(&points, (0.0, r_max));
+    let kdt = kiddo::ImmutableKdTree::<f32, 3>::build(&points, (0.0, r_max));
 
     for center in query_grid::<3>(6.0, 10) {
         for &radius in &[0.5, 1.0, 3.0] {
