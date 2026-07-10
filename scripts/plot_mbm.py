@@ -12,7 +12,6 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import numpy as np
 import pandas as pd
 import seaborn as sns
 from matplotlib.colors import LinearSegmentedColormap, to_rgb
@@ -134,7 +133,7 @@ def main() -> None:
     query_all = df[df.metric.isin(query_metrics)]
     x_lo, x_hi = query_all.n_points.min(), query_all.n_points.max()
     y_lo, y_hi = query_all.ns_per_op.min(), query_all.ns_per_op.max()
-    query_extent = (x_lo, x_hi, np.log10(y_lo), np.log10(y_hi))
+    query_extent = (x_lo, x_hi, y_lo, y_hi)
 
     for i, (ax, (metric, title)) in enumerate(zip(axes[1:], QUERY_PANELS)):
         query = df[df.metric == metric]
@@ -146,7 +145,7 @@ def main() -> None:
             # series (mvtable, capt).
             if lanes != 1 or name == "kiddo":
                 density_hexbin(
-                    ax, sub, "n_points", "ns_per_op", color, "log", query_extent
+                    ax, sub, "n_points", "ns_per_op", color, "linear", query_extent
                 )
             # `logx=True` fits ns_per_op ~ a*log(n_points) + b (this structure's theoretical
             # O(log n) query complexity); `logx=False` fits a straight line against n_points
@@ -167,7 +166,6 @@ def main() -> None:
             )
         ax.set_title(title)
         ax.set_xlabel("")
-        ax.set_yscale("log")
         ax.set_ylim(y_lo, y_hi)
         ax.set_ylabel("Time (Nanoseconds)" if i == 0 else "")
 
