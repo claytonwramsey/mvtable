@@ -38,6 +38,10 @@ pub struct RecordedQuery {
     pub r: f32,
     /// Whether this query collided with the world it was checked against.
     pub collided: bool,
+    /// The number of lanes (`L`) in the [`Collide3::collides_balls`] call this query was part of.
+    /// A run of consecutive [`RecordedQuery`]s sharing the same `lanes > 1` value, taken
+    /// `lanes`-at-a-time, reconstructs exactly the SIMD batches the planner actually issued.
+    pub lanes: u8,
 }
 
 /// A [`Collide3`] implementation that wraps a point-cloud-only [`World3d`] and records every
@@ -74,6 +78,7 @@ impl Collide3<f32> for RecordingWorld {
             z,
             r,
             collided,
+            lanes: 1,
         });
         collided
     }
@@ -90,11 +95,11 @@ impl Collide3<f32> for RecordingWorld {
     {
         let any = self.world.collides_balls(xs, ys, zs, rs);
 
-        // separately record whether any query collided
         let xs = xs.to_array();
         let ys = ys.to_array();
         let zs = zs.to_array();
         let rs = rs.to_array();
+        let lanes = u8::try_from(L).expect("SIMD lane count must fit in a u8");
         let mut log = self.log.borrow_mut();
         for l in 0..L {
             let collided = self.world.collides_ball(xs[l], ys[l], zs[l], rs[l]);
@@ -104,6 +109,7 @@ impl Collide3<f32> for RecordingWorld {
                 z: zs[l],
                 r: rs[l],
                 collided,
+                lanes,
             });
         }
         any

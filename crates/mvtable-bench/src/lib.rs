@@ -7,7 +7,7 @@
 //! `mvtable` and `capt`'s SIMD-batched queries (`kiddo` has no SIMD-batched query API).
 #![feature(portable_simd)]
 
-use std::simd::Simd;
+use std::simd::{Simd, cmp::SimdPartialEq};
 
 use capt::AxisSimd;
 use kiddo::SquaredEuclidean;
@@ -79,7 +79,8 @@ pub trait SimdStructure<const K: usize>: Structure<K> {
         radii: Simd<f32, L>,
     ) -> bool
     where
-        Simd<f32, L>: AxisSimd<L>;
+        Simd<f32, L>: AxisSimd<L>,
+        <Simd<f32, L> as SimdPartialEq>::Mask: Copy;
 }
 
 impl<const K: usize> SimdStructure<K> for mvtable::Mvt<K, f32> {
@@ -90,6 +91,7 @@ impl<const K: usize> SimdStructure<K> for mvtable::Mvt<K, f32> {
     ) -> bool
     where
         Simd<f32, L>: AxisSimd<L>,
+        <Simd<f32, L> as SimdPartialEq>::Mask: Copy,
     {
         Self::collides_simd(self, centers, radii)
     }
@@ -103,6 +105,7 @@ impl<const K: usize> SimdStructure<K> for capt::Capt<K, f32, u32> {
     ) -> bool
     where
         Simd<f32, L>: AxisSimd<L>,
+        <Simd<f32, L> as SimdPartialEq>::Mask: Copy,
     {
         Self::collides_simd(self, centers, radii)
     }

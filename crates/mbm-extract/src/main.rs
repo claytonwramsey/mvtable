@@ -74,8 +74,10 @@ fn write_points(path: impl AsRef<Path>, points: &[[f32; 3]]) -> std::io::Result<
     Ok(())
 }
 
-/// Write `queries` as a `u64` little-endian count followed by that many `(x, y, z, r, collided)`
-/// records (4 little-endian `f32`s + 1 `u8`, 17 bytes each).
+/// Write `queries` as a `u64` little-endian count followed by that many
+/// `(x, y, z, r, collided, lanes)` records (4 little-endian `f32`s + 2 `u8`s, 18 bytes each).
+/// `lanes` is the width of the original `collides_balls::<L>` call each query was part of (see
+/// [`RecordedQuery::lanes`]) and lets replay reconstruct the planner's true SIMD batch structure.
 fn write_queries(path: impl AsRef<Path>, queries: &[RecordedQuery]) -> std::io::Result<()> {
     let mut w = BufWriter::new(File::create(path)?);
     w.write_all(&(queries.len() as u64).to_le_bytes())?;
@@ -84,7 +86,7 @@ fn write_queries(path: impl AsRef<Path>, queries: &[RecordedQuery]) -> std::io::
         w.write_all(&q.y.to_le_bytes())?;
         w.write_all(&q.z.to_le_bytes())?;
         w.write_all(&q.r.to_le_bytes())?;
-        w.write_all(&[u8::from(q.collided)])?;
+        w.write_all(&[u8::from(q.collided), q.lanes])?;
     }
     Ok(())
 }

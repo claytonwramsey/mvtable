@@ -12,7 +12,7 @@ use std::{
     hint::black_box,
     io::{BufRead, BufReader, BufWriter, Read, Write},
     path::{Path, PathBuf},
-    simd::Simd,
+    simd::{Simd, cmp::SimdPartialEq},
     time::Instant,
 };
 
@@ -20,12 +20,19 @@ use capt::AxisSimd;
 use mvtable_bench::{SimdStructure, Structure, filter};
 use rand::{SeedableRng, rngs::SmallRng};
 
-/// Maximum number of queries to try against a single trace (to prevent trace replay from taking too
-/// long).
+/// Maximum number of queries to try against the scalar/sequential trace for a single workload
+/// (to prevent trace replay from taking too long).
 const MAX_QUERIES: usize = 10_000;
 
+/// Maximum number of SIMD batches to try against the parallel trace for a single workload.
+/// Chosen so the total number of underlying scalar-equivalent queries replayed
+/// (`MAX_SIMD_BATCHES * SIMD_L`) stays the same order of magnitude as [`MAX_QUERIES`].
+const MAX_SIMD_BATCHES: usize = MAX_QUERIES / SIMD_L;
+
 /// SIMD lane width benchmarked for `mvtable` and `capt`. Also the lane count `capt` is
-/// constructed with, so that the same instance serves both the scalar and SIMD benchmarks.
+/// constructed with, so that the same instance serves both the scalar and SIMD benchmarks. This
+/// must match the lane width `mbm-extract`'s `carom::Rake<_, _, _, 8>` actually replays raked
+/// motion-segment validity checks with (see `RawQuery::lanes`).
 const SIMD_L: usize = 8;
 
 /// Filters compared, by name; see [`apply_filter`].
@@ -35,9 +42,22 @@ const FILTER_NAMES: [&str; 2] = ["centervox", "morton"];
 /// of a workload's own smallest queried sphere radius `r_min`.
 const FILTER_RADIUS_SCALES: [f32; 5] = [4.0, 8.0, 16.0, 32.0, 64.0];
 
+#[derive(Clone, Copy)]
 struct Query {
     center: [f32; 3],
     r: f32,
+}
+
+/// A query read directly from a `mbm-extract` query trace file, still tagged with `lanes`: the
+/// width `L` of the original `collides_balls::<L>` call this query was part of (see
+/// `mbm_extract::RecordedQuery::lanes`). `lanes == 1` means this was an individually-issued
+/// single-configuration validity check; `lanes == L > 1` means it was one lane of an `L`-wide
+/// batch issued together for a raked motion-segment validity check.
+#[derive(Clone, Copy)]
+struct RawQuery {
+    center: [f32; 3],
+    r: f32,
+    lanes: u8,
 }
 
 /// Read a point cloud written by `mbm-extract`'s `write_points`: a `u64` little-endian count
@@ -62,24 +82,25 @@ fn read_points(path: impl AsRef<Path>) -> Result<Vec<[f32; 3]>, Box<dyn Error>> 
 }
 
 /// Read a query trace written by `mbm-extract`'s `write_queries`: a `u64` little-endian count
-/// followed by that many `(x, y, z, r, collided)` little-endian records.
-fn read_queries(path: impl AsRef<Path>) -> Result<Vec<Query>, Box<dyn Error>> {
+/// followed by that many `(x, y, z, r, collided, lanes)` little-endian records.
+fn read_queries(path: impl AsRef<Path>) -> Result<Vec<RawQuery>, Box<dyn Error>> {
     let mut r = BufReader::new(File::open(path)?);
     let mut count_buf = [0u8; 8];
     r.read_exact(&mut count_buf)?;
     let count = u64::from_le_bytes(count_buf) as usize;
 
     let mut queries = Vec::with_capacity(count);
-    let mut buf = [0u8; 17];
+    let mut buf = [0u8; 18];
     for _ in 0..count {
         r.read_exact(&mut buf)?;
-        queries.push(Query {
+        queries.push(RawQuery {
             center: [
                 f32::from_le_bytes(buf[0..4].try_into().unwrap()),
                 f32::from_le_bytes(buf[4..8].try_into().unwrap()),
                 f32::from_le_bytes(buf[8..12].try_into().unwrap()),
             ],
             r: f32::from_le_bytes(buf[12..16].try_into().unwrap()),
+            lanes: buf[17],
         });
     }
     Ok(queries)
@@ -99,35 +120,74 @@ fn apply_filter(name: &str, points: &[[f32; 3]], resolution: f32) -> Vec<[f32; 3
     }
 }
 
-/// Deterministically subsample `queries` down to `size` (or return them unchanged if already at
-/// most `size`), seeded by `seed` so runs are reproducible.
-fn subsample_queries(queries: Vec<Query>, size: usize, seed: u64) -> Vec<Query> {
-    if queries.len() <= size {
-        return queries;
+/// Split a raw query trace (in original planner-issue order) back into the two kinds of queries
+/// the planner actually issues: individually-issued single-configuration checks (`lanes == 1`)
+/// and `L`-wide SIMD batches issued together as one `collides_balls::<L>` call for raked
+/// motion-segment validity checks (`lanes == L`).
+fn split_batches<const L: usize>(raw: &[RawQuery]) -> (Vec<Query>, Vec<[Query; L]>) {
+    let mut scalar = Vec::new();
+    let mut batches = Vec::new();
+    let mut i = 0;
+    while i < raw.len() {
+        let lanes = raw[i].lanes as usize;
+        if lanes == 1 {
+            scalar.push(Query {
+                center: raw[i].center,
+                r: raw[i].r,
+            });
+            i += 1;
+        } else if lanes == L
+            && i + L <= raw.len()
+            && raw[i..i + L].iter().all(|q| q.lanes as usize == L)
+        {
+            let batch = std::array::from_fn(|j| Query {
+                center: raw[i + j].center,
+                r: raw[i + j].r,
+            });
+            batches.push(batch);
+            i += L;
+        } else {
+            // A lane width this benchmark doesn't model (or a truncated trailing batch) - drop
+            // it rather than risk misgrouping it with unrelated neighbors.
+            i += 1;
+        }
     }
-    let mut rng = SmallRng::seed_from_u64(seed);
-    let idx = rand::seq::index::sample(&mut rng, queries.len(), size);
-    idx.into_iter()
-        .map(|i| Query {
-            center: queries[i].center,
-            r: queries[i].r,
-        })
-        .collect()
+    (scalar, batches)
 }
 
-/// Group `queries` into batches of `L`, converting each batch into a SIMD center/radius vector.
-/// Any remainder that doesn't fill a full batch of `L` is dropped.
-fn to_simd_batches<const L: usize>(queries: &[&Query]) -> Vec<([Simd<f32, L>; 3], Simd<f32, L>)> {
-    queries
-        .chunks_exact(L)
-        .map(|chunk| {
-            let centers: [Simd<f32, L>; 3] = std::array::from_fn(|k| {
-                Simd::from_array(std::array::from_fn(|lane| chunk[lane].center[k]))
-            });
-            let radii = Simd::from_array(std::array::from_fn(|lane| chunk[lane].r));
-            (centers, radii)
-        })
-        .collect()
+/// Deterministically subsample `items` down to `size` (or return them unchanged if already at
+/// most `size`), seeded by `seed` so runs are reproducible.
+fn subsample<T: Clone>(items: Vec<T>, size: usize, seed: u64) -> Vec<T> {
+    if items.len() <= size {
+        return items;
+    }
+    let mut rng = SmallRng::seed_from_u64(seed);
+    let idx = rand::seq::index::sample(&mut rng, items.len(), size);
+    idx.into_iter().map(|i| items[i].clone()).collect()
+}
+
+/// Partition the indices of `items` by `pred`, returning `(matching, not_matching)`.
+fn partition_indices<T>(items: &[T], mut pred: impl FnMut(&T) -> bool) -> (Vec<usize>, Vec<usize>) {
+    let mut yes = Vec::new();
+    let mut no = Vec::new();
+    for (i, item) in items.iter().enumerate() {
+        if pred(item) {
+            yes.push(i);
+        } else {
+            no.push(i);
+        }
+    }
+    (yes, no)
+}
+
+/// Convert one true SIMD batch (`L` queries issued together as a single `collides_balls::<L>`
+/// call during planning) into `capt`/`mvtable`'s `collides_simd` SIMD input format.
+fn batch_to_simd<const L: usize>(batch: &[Query; L]) -> ([Simd<f32, L>; 3], Simd<f32, L>) {
+    let centers: [Simd<f32, L>; 3] = std::array::from_fn(|k| {
+        Simd::from_array(std::array::from_fn(|lane| batch[lane].center[k]))
+    });
+    let radii = Simd::from_array(std::array::from_fn(|lane| batch[lane].r));
+    (centers, radii)
 }
 
 /// Time replaying every query in `queries` against `structure`.
@@ -146,6 +206,7 @@ fn time_simd_queries<S: SimdStructure<3>, const L: usize>(
 ) -> std::time::Duration
 where
     Simd<f32, L>: AxisSimd<L>,
+    <Simd<f32, L> as SimdPartialEq>::Mask: Copy,
 {
     let tic = Instant::now();
     for (centers, radii) in batches {
@@ -154,22 +215,22 @@ where
     tic.elapsed()
 }
 
-/// Split `queries` into `(all, colliding, non_colliding)` reference traces (using the precomputed
-/// `colliding`/`non_colliding` index sets), skip empty traces, and call `record` with each
+/// Split `items` into `(all, matching, not_matching)` reference traces (using the precomputed
+/// `matching`/`not_matching` index sets), skip empty traces, and call `record` with each
 /// non-empty `(trace_name, trace)` pair.
-fn for_each_trace<'q>(
-    queries: &'q [Query],
-    colliding: &[usize],
-    non_colliding: &[usize],
-    mut record: impl FnMut(&str, &[&'q Query]) -> Result<(), Box<dyn Error>>,
+fn for_each_trace<'q, T>(
+    items: &'q [T],
+    matching: &[usize],
+    not_matching: &[usize],
+    mut record: impl FnMut(&str, &[&'q T]) -> Result<(), Box<dyn Error>>,
 ) -> Result<(), Box<dyn Error>> {
-    let all: Vec<&Query> = queries.iter().collect();
-    let colliding: Vec<&Query> = colliding.iter().map(|&i| &queries[i]).collect();
-    let non_colliding: Vec<&Query> = non_colliding.iter().map(|&i| &queries[i]).collect();
+    let all: Vec<&T> = items.iter().collect();
+    let matching: Vec<&T> = matching.iter().map(|&i| &items[i]).collect();
+    let not_matching: Vec<&T> = not_matching.iter().map(|&i| &items[i]).collect();
     for (trace_name, trace) in [
         ("all", all),
-        ("colliding", colliding),
-        ("non_colliding", non_colliding),
+        ("colliding", matching),
+        ("non_colliding", not_matching),
     ] {
         if !trace.is_empty() {
             record(trace_name, &trace)?;
@@ -216,17 +277,14 @@ fn bench_simd<S: SimdStructure<3>>(
     out: &mut impl Write,
     ctx: RowContext,
     structure: &S,
-    queries: &[Query],
+    batches: &[[Query; SIMD_L]],
     colliding: &[usize],
     non_colliding: &[usize],
 ) -> Result<(), Box<dyn Error>> {
-    for_each_trace(queries, colliding, non_colliding, |trace_name, trace| {
-        if trace.len() < SIMD_L {
-            return Ok(());
-        }
-        let batches = to_simd_batches::<SIMD_L>(trace);
-        let n_simd_queries = batches.len() * SIMD_L;
-        let elapsed_ns = time_simd_queries(structure, &batches).as_secs_f64() * 1e9;
+    for_each_trace(batches, colliding, non_colliding, |trace_name, trace| {
+        let simd_batches: Vec<_> = trace.iter().map(|b| batch_to_simd::<SIMD_L>(b)).collect();
+        let n_simd_queries = simd_batches.len() * SIMD_L;
+        let elapsed_ns = time_simd_queries(structure, &simd_batches).as_secs_f64() * 1e9;
         let ns_per_query = elapsed_ns / n_simd_queries as f64;
         writeln!(
             out,
@@ -349,17 +407,22 @@ fn main() -> Result<(), Box<dyn Error>> {
         let prefix = workload.file_prefix();
         let label = workload.label();
         let full_points = read_points(raw_dir.join(format!("{prefix}_points_full.bin")))?;
-        let all_queries = read_queries(raw_dir.join(format!("{prefix}_queries.bin")))?;
-        let r_max = all_queries.iter().fold(0.0f32, |m, q| m.max(q.r));
-        let r_min = all_queries.iter().fold(f32::INFINITY, |m, q| m.min(q.r));
+        let raw_queries = read_queries(raw_dir.join(format!("{prefix}_queries.bin")))?;
+        let r_max = raw_queries.iter().fold(0.0f32, |m, q| m.max(q.r));
+        let r_min = raw_queries.iter().fold(f32::INFINITY, |m, q| m.min(q.r));
         let r_range = (r_min, r_max);
+
+        // Regroup the flat, temporally-ordered trace back into the two kinds of queries the
+        // planner actually issued before subsampling.
+        let (all_scalar, all_batches) = split_batches::<SIMD_L>(&raw_queries);
 
         // Subsampled once per workload (not per filter/radius), so every (filter, radius)
         // combination below is compared on the exact same query set.
         let seed = prefix
             .bytes()
             .fold(0u64, |h, b| h.wrapping_mul(31).wrapping_add(b as u64));
-        let queries = subsample_queries(all_queries, MAX_QUERIES, seed);
+        let scalar_queries = subsample(all_scalar, MAX_QUERIES, seed);
+        let simd_batches = subsample(all_batches, MAX_SIMD_BATCHES, seed.wrapping_add(1));
 
         for &filter_name in &FILTER_NAMES {
             for &scale in &FILTER_RADIUS_SCALES {
@@ -373,26 +436,33 @@ fn main() -> Result<(), Box<dyn Error>> {
                 }
 
                 // Ground-truth colliding/non-colliding partition for this point cloud, computed
-                // with `mvtable` itself.
+                // with `mvtable` itself. A batch counts as "colliding" if any of its lanes does,
+                // mirroring `collides_simd`'s any-of-batch semantics.
                 let oracle = mvtable::Mvt::<3, f32>::new(&points, r_max);
-                let mut colliding = Vec::new();
-                let mut non_colliding = Vec::new();
-                for (i, q) in queries.iter().enumerate() {
-                    if Structure::collides(&oracle, &q.center, q.r) {
-                        colliding.push(i);
-                    } else {
-                        non_colliding.push(i);
-                    }
-                }
+                let (colliding, non_colliding) = partition_indices(&scalar_queries, |q| {
+                    Structure::collides(&oracle, &q.center, q.r)
+                });
+                let (batch_colliding, batch_non_colliding) =
+                    partition_indices(&simd_batches, |batch| {
+                        batch
+                            .iter()
+                            .any(|q| Structure::collides(&oracle, &q.center, q.r))
+                    });
 
                 println!(
                     "{label} [{filter_name} x{scale}] @ {n_points} points (from \
-                     {}): {} queries ({} colliding, {} non-colliding)",
+                     {}): {} scalar queries ({} colliding, {} non-colliding), {} SIMD batches \
+                     ({} colliding, {} non-colliding)",
                     full_points.len(),
-                    queries.len(),
+                    scalar_queries.len(),
                     colliding.len(),
-                    non_colliding.len()
+                    non_colliding.len(),
+                    simd_batches.len(),
+                    batch_colliding.len(),
+                    batch_non_colliding.len(),
                 );
+
+                let n_queries = scalar_queries.len() + simd_batches.len() * SIMD_L;
 
                 // `mvtable`: one instance, reused for scalar and SIMD queries (construction
                 // doesn't depend on the SIMD lane width, unlike `capt`).
@@ -407,12 +477,28 @@ fn main() -> Result<(), Box<dyn Error>> {
                 write_construction_row(
                     &mut out,
                     ctx,
-                    queries.len(),
+                    n_queries,
                     tic.elapsed().as_secs_f64() * 1e9,
                 )?;
                 write_memory_row(&mut out, ctx, mvt.memory_used())?;
-                bench_scalar(&mut out, ctx, &mvt, &queries, &colliding, &non_colliding)?;
-                bench_simd(&mut out, ctx, &mvt, &queries, &colliding, &non_colliding)?;
+                bench_scalar(
+                    &mut out,
+                    ctx,
+                    &mvt,
+                    &scalar_queries,
+                    &colliding,
+                    &non_colliding,
+                )?;
+                if !simd_batches.is_empty() {
+                    bench_simd(
+                        &mut out,
+                        ctx,
+                        &mvt,
+                        &simd_batches,
+                        &batch_colliding,
+                        &batch_non_colliding,
+                    )?;
+                }
 
                 // `capt`: built once at `SIMD_L` lanes (rather than once at 1 lane for scalar and
                 // again at `SIMD_L` lanes for SIMD), reused for both benchmarks below.
@@ -425,12 +511,28 @@ fn main() -> Result<(), Box<dyn Error>> {
                 write_construction_row(
                     &mut out,
                     ctx,
-                    queries.len(),
+                    n_queries,
                     tic.elapsed().as_secs_f64() * 1e9,
                 )?;
                 write_memory_row(&mut out, ctx, capt.memory_used())?;
-                bench_scalar(&mut out, ctx, &capt, &queries, &colliding, &non_colliding)?;
-                bench_simd(&mut out, ctx, &capt, &queries, &colliding, &non_colliding)?;
+                bench_scalar(
+                    &mut out,
+                    ctx,
+                    &capt,
+                    &scalar_queries,
+                    &colliding,
+                    &non_colliding,
+                )?;
+                if !simd_batches.is_empty() {
+                    bench_simd(
+                        &mut out,
+                        ctx,
+                        &capt,
+                        &simd_batches,
+                        &batch_colliding,
+                        &batch_non_colliding,
+                    )?;
+                }
 
                 // `kiddo`: scalar only, no SIMD-batched query API.
                 let ctx = RowContext {
@@ -442,10 +544,17 @@ fn main() -> Result<(), Box<dyn Error>> {
                 write_construction_row(
                     &mut out,
                     ctx,
-                    queries.len(),
+                    n_queries,
                     tic.elapsed().as_secs_f64() * 1e9,
                 )?;
-                bench_scalar(&mut out, ctx, &kdt, &queries, &colliding, &non_colliding)?;
+                bench_scalar(
+                    &mut out,
+                    ctx,
+                    &kdt,
+                    &scalar_queries,
+                    &colliding,
+                    &non_colliding,
+                )?;
 
                 out.flush()?;
             }
