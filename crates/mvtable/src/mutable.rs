@@ -319,8 +319,9 @@ impl<const K: usize, A: Axis, I: Index> MutableMvt<K, A, I> {
     ///
     /// Returns [`InsertError::NonFinite`] if `point` contains a non-finite value,
     /// [`InsertError::TooManyVoxels`] if inserting `point` would need more voxels or points than
-    /// the index type `I` can represent, and [`InsertError::Uninitialized`] if this `MutableMvt`
-    /// was constructed with no points, and so has no workspace bounds to insert into.
+    /// the index type `I` can represent, and [`InsertError::NoWorkspaceBounds`] if this
+    /// `MutableMvt` was constructed with no points, and so has no workspace bounds to insert
+    /// into.
     ///
     /// # Examples
     ///
