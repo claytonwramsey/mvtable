@@ -45,6 +45,10 @@
 //! assert!(mvt.collides(&center, radius1));
 //! ```
 //!
+//! [`Mvt`] is immutable once built. If you need to insert new points after construction, use
+//! [`MutableMvt`] instead, which supports [`MutableMvt::insert`]/[`MutableMvt::insert_points`] at
+//! some cost to query performance.
+//!
 //! ## Optional features
 //!
 //! This crate exposes one feature, `simd`, which enables a SIMD-parallel interface for querying
@@ -66,6 +70,11 @@ use core::{
     mem::size_of,
     ops::{Add, Div, Mul, Sub},
 };
+
+mod grid;
+mod mutable;
+
+pub use mutable::{InsertError, MutableMvt, NewMutableMvtError};
 
 #[cfg(feature = "simd")]
 use core::ops::AddAssign;
@@ -402,6 +411,12 @@ type FlattenedVoxels<A, I, const K: usize> = (Vec<Voxel<A, I, K>>, Vec<A>);
 #[derive(Clone, Debug, PartialEq, Eq)]
 /// The errors that can occur when calling [`Mvt::try_new`] or [`Mvt::try_with_point_radius`].
 ///
+/// This type is specific to constructing an [`Mvt`]; [`MutableMvt`] has its
+/// own, separate error types for construction
+/// ([`NewMutableMvtError`]) and insertion
+/// ([`InsertError`]), since (for example) an `Mvt` can never fail to
+/// construct in the specific way an uninitialized `MutableMvt` can fail to accept an insertion.
+///
 /// # Examples
 ///
 /// ```
@@ -417,6 +432,12 @@ pub enum NewMvtError {
     InvalidRadius,
     /// There were too many voxels or points to be represented without integer overflow.
     TooManyVoxels,
+}
+
+impl From<grid::TooManyVoxels> for NewMvtError {
+    fn from(_: grid::TooManyVoxels) -> Self {
+        Self::TooManyVoxels
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -582,23 +603,7 @@ impl<const K: usize, A: Axis, I: Index> Mvt<K, A, I> {
             });
         };
 
-        // size each axis independently, so the workspace need not be cubic; a voxel's side length
-        // along axis `k` is `extent[k] / grid_width[k]`, which is always at least `cell` thanks to
-        // the floor division below.
-        let mut grid_width = [0usize; K];
-        let mut grid_width_i = [I::ZERO; K];
-        let mut scale = [A::ZERO; K];
-        for k in 0..K {
-            let extent = global_aabb.hi[k] - global_aabb.lo[k];
-            // an extent of zero (e.g. every point shares this coordinate) would otherwise divide
-            // by zero below; a single voxel spanning `cell` along this axis suffices instead.
-            let extent = if extent > A::ZERO { extent } else { cell_wd };
-
-            let gw = usize::max(1, (extent / cell_wd).to_index());
-            grid_width[k] = gw;
-            grid_width_i[k] = I::from_usize(gw).ok_or(NewMvtError::TooManyVoxels)?;
-            scale[k] = A::from_usize(gw) / extent;
-        }
+        let (grid_width, grid_width_i, scale) = grid::size_grid(&global_aabb, cell_wd)?;
 
         let (tables, voxel_points, voxel_aabbs) =
             Self::build_hierarchy(points, global_aabb.lo, scale, grid_width)?;
@@ -626,38 +631,14 @@ impl<const K: usize, A: Axis, I: Index> Mvt<K, A, I> {
         scale: [A; K],
         grid_width: [usize; K],
     ) -> Result<VoxelBuckets<A, I, K>, NewMvtError> {
-        let mut tables: Vec<I> = vec![I::SENTINEL; grid_width[0]];
+        let mut tables: Vec<I> = grid::new_root_table(grid_width);
         let mut voxel_points: Vec<Vec<[A; K]>> = Vec::new();
         let mut voxel_aabbs: Vec<Aabb<A, K>> = Vec::new();
 
         for p in points {
-            let mut coords = [0usize; K];
-            for (k, c) in coords.iter_mut().enumerate() {
-                let v = (p[k] - lo[k]) * scale[k];
-                let idx = v.to_index();
-                // idx should be in `0..grid_width[k]`, but may be equal to `grid_width` due to FP
-                // rounding
-                assert!(
-                    idx <= grid_width[k],
-                    "point coordinate on axis {k} maps to grid index {idx}, which is outside the \
-                     grid (width {})",
-                    grid_width[k]
-                );
-                *c = idx.min(grid_width[k] - 1);
-            }
+            let coords = grid::point_to_grid_coords(p, lo, scale, grid_width);
+            let leaf_slot = grid::get_leaf(&mut tables, grid_width, coords)?;
 
-            let mut table_offset = 0usize;
-            for (level, &coord) in coords[..K - 1].iter().enumerate() {
-                let slot = table_offset + coord;
-                if tables[slot] == I::SENTINEL {
-                    let new_offset = tables.len();
-                    tables.resize(new_offset + grid_width[level + 1], I::SENTINEL);
-                    tables[slot] = I::from_usize(new_offset).ok_or(NewMvtError::TooManyVoxels)?;
-                }
-                table_offset = tables[slot].to_usize();
-            }
-
-            let leaf_slot = table_offset + coords[K - 1];
             let voxel_idx = if tables[leaf_slot] == I::SENTINEL {
                 let idx = voxel_points.len();
                 voxel_points.push(Vec::new());
