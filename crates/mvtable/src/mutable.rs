@@ -13,8 +13,8 @@ use crate::{AxisSimd, AxisSimdElement};
 
 #[non_exhaustive]
 #[derive(Clone, Debug, PartialEq, Eq)]
-/// The errors that can occur when calling [`MutableMvt::try_new`] or
-/// [`MutableMvt::try_with_point_radius`].
+/// The errors that can occur when calling [`MutableMvt::try_new`],
+/// [`MutableMvt::try_with_point_radius`], or [`MutableMvt::try_with_workspace`].
 ///
 /// # Examples
 ///
@@ -31,6 +31,9 @@ pub enum NewMutableMvtError {
     InvalidRadius,
     /// There were too many voxels or points to be represented without integer overflow.
     TooManyVoxels,
+    /// [`MutableMvt::try_with_workspace`] was called with `lo[k] > hi[k]` for some axis `k`, so
+    /// no valid workspace box exists.
+    InvalidWorkspace,
 }
 
 impl From<grid::TooManyVoxels> for NewMutableMvtError {
@@ -260,16 +263,7 @@ impl<const K: usize, A: Axis, I: Index> MutableMvt<K, A, I> {
             });
         };
 
-        let (grid_width, grid_width_i, scale) = grid::size_grid(&bounding_box, cell_wd)?;
-        let mut this = Self {
-            grid_width: grid_width_i,
-            scale,
-            grid_lo: bounding_box.lo,
-            r_point,
-            global_aabb: Aabb::EMPTY,
-            tables: grid::new_root_table(grid_width),
-            voxels: Vec::new(),
-        };
+        let mut this = Self::try_with_workspace(bounding_box.lo, bounding_box.hi, r_max, r_point)?;
         // every point was already checked finite above, and the grid is already established, so
         // `insert_initialized` (rather than the public `insert`) is both sufficient and avoids
         // mixing `NewMutableMvtError` with `InsertError`'s unrelated `Uninitialized` variant.
@@ -277,6 +271,79 @@ impl<const K: usize, A: Axis, I: Index> MutableMvt<K, A, I> {
             this.insert_initialized(p)?;
         }
         Ok(this)
+    }
+
+    /// Construct a new, empty `MutableMvt` whose workspace bounds are set directly to the
+    /// axis-aligned box from `lo` to `hi`, rather than being inferred from a point cloud, with a
+    /// point radius `r_point` added to every query.
+    ///
+    /// `r_max` is the maximum radius of the balls that will be queried against the tree; it is
+    /// used, together with `r_point`, to size the grid's voxels, exactly as in
+    /// [`Self::with_point_radius`]. Unlike constructing with an empty point slice, the returned
+    /// `MutableMvt` already has established workspace bounds, so
+    /// [`Self::insert`]/[`Self::insert_points`] can be called immediately.
+    ///
+    /// # Panics
+    ///
+    /// This function will panic if any component of `lo` or `hi` is non-finite, if `lo[k] >
+    /// hi[k]` for any axis `k`, or if `r_max + r_point` is not a positive, finite value.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let mut mvt = mvtable::MutableMvt::<2>::with_workspace([0.0, 0.0], [10.0, 10.0], 1.0, 0.0);
+    /// mvt.insert(&[5.0, 5.0]).unwrap();
+    /// assert!(mvt.collides(&[5.0, 5.0], 0.1));
+    /// ```
+    #[must_use]
+    pub fn with_workspace(lo: [A; K], hi: [A; K], r_max: A, r_point: A) -> Self {
+        Self::try_with_workspace(lo, hi, r_max, r_point)
+            .expect("failed to construct MutableMvt; see NewMutableMvtError variants")
+    }
+
+    /// Construct a new, empty `MutableMvt` whose workspace bounds are set directly to the
+    /// axis-aligned box from `lo` to `hi`, checking for invalid input.
+    ///
+    /// # Errors
+    ///
+    /// See [`NewMutableMvtError`] for the circumstances in which this function returns an error.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let mvt =
+    ///     mvtable::MutableMvt::<2>::try_with_workspace([0.0, 0.0], [10.0, 10.0], 1.0, 0.0).unwrap();
+    /// ```
+    pub fn try_with_workspace(
+        lo: [A; K],
+        hi: [A; K],
+        r_max: A,
+        r_point: A,
+    ) -> Result<Self, NewMutableMvtError> {
+        const { assert!(K > 0, "MutableMvt requires at least one dimension") };
+
+        if lo.iter().chain(&hi).any(|x| !x.is_finite()) {
+            return Err(NewMutableMvtError::NonFinite);
+        }
+        if (0..K).any(|k| lo[k] > hi[k]) {
+            return Err(NewMutableMvtError::InvalidWorkspace);
+        }
+        let cell_wd = r_max + r_point;
+        if cell_wd <= A::ZERO {
+            return Err(NewMutableMvtError::InvalidRadius);
+        }
+
+        let bounding_box = Aabb { lo, hi };
+        let (grid_width, grid_width_i, scale) = grid::size_grid(&bounding_box, cell_wd)?;
+        Ok(Self {
+            grid_width: grid_width_i,
+            scale,
+            grid_lo: lo,
+            r_point,
+            global_aabb: Aabb::EMPTY,
+            tables: grid::new_root_table(grid_width),
+            voxels: Vec::new(),
+        })
     }
 
     /// Whether this `MutableMvt`'s grid has been established (by construction with at least one
@@ -974,6 +1041,85 @@ mod tests {
         assert_eq!(err, InsertError::NonFinite);
         // the rejected point must not have been stored.
         assert_eq!(mvt.points().count(), 1);
+    }
+
+    #[test]
+    fn with_workspace_matches_build_from_points() {
+        const R: f32 = 0.05;
+        let mut rng = SmallRng::seed_from_u64(11);
+        let points: Vec<[f32; 2]> = (0..300)
+            .map(|_| [rng.random_range(-2.0..2.0), rng.random_range(-2.0..2.0)])
+            .collect();
+
+        let mut mvt = MutableMvt::<2>::with_workspace([-2.0, -2.0], [2.0, 2.0], R, 0.0);
+        assert!(mvt.points().next().is_none());
+        mvt.insert_points(&points).unwrap();
+
+        for _ in 0..2_000 {
+            let center = [rng.random_range(-2.5..2.5), rng.random_range(-2.5..2.5)];
+            let radius = rng.random_range(0.0..R);
+            let expected = points.iter().any(|&a| distsq(a, center) <= radius * radius);
+            assert_eq!(
+                expected,
+                mvt.collides(&center, radius),
+                "query {center:?}, radius {radius}"
+            );
+        }
+    }
+
+    #[test]
+    fn with_workspace_rejects_non_finite() {
+        let err =
+            MutableMvt::<2>::try_with_workspace([0.0, f32::NAN], [1.0, 1.0], 0.1, 0.0).unwrap_err();
+        assert_eq!(err, NewMutableMvtError::NonFinite);
+    }
+
+    #[test]
+    fn with_workspace_rejects_invalid_radius() {
+        let err =
+            MutableMvt::<2>::try_with_workspace([0.0, 0.0], [1.0, 1.0], -1.0, 0.0).unwrap_err();
+        assert_eq!(err, NewMutableMvtError::InvalidRadius);
+    }
+
+    #[test]
+    fn with_workspace_rejects_invalid_radius_from_point_radius_padding() {
+        // r_max alone is positive, but r_max + r_point is not, so this must still error.
+        let err =
+            MutableMvt::<2>::try_with_workspace([0.0, 0.0], [1.0, 1.0], 1.0, -2.0).unwrap_err();
+        assert_eq!(err, NewMutableMvtError::InvalidRadius);
+    }
+
+    #[test]
+    fn with_workspace_rejects_inverted_bounds() {
+        let err =
+            MutableMvt::<2>::try_with_workspace([1.0, 0.0], [0.0, 1.0], 0.1, 0.0).unwrap_err();
+        assert_eq!(err, NewMutableMvtError::InvalidWorkspace);
+    }
+
+    #[test]
+    fn with_workspace_point_radius_matches_build_from_points() {
+        const R: f32 = 0.3;
+        const R_POINT: f32 = 0.05;
+        let mut rng = SmallRng::seed_from_u64(23);
+        let points: Vec<[f32; 2]> = (0..300)
+            .map(|_| [rng.random_range(-2.0..2.0), rng.random_range(-2.0..2.0)])
+            .collect();
+
+        let mut mvt = MutableMvt::<2>::with_workspace([-2.0, -2.0], [2.0, 2.0], R, R_POINT);
+        mvt.insert_points(&points).unwrap();
+
+        for _ in 0..2_000 {
+            let center = [rng.random_range(-2.5..2.5), rng.random_range(-2.5..2.5)];
+            let radius = rng.random_range(0.0..R);
+            let expected = points
+                .iter()
+                .any(|&a| distsq(a, center) <= (radius + R_POINT) * (radius + R_POINT));
+            assert_eq!(
+                expected,
+                mvt.collides(&center, radius),
+                "query {center:?}, radius {radius}"
+            );
+        }
     }
 
     #[test]
