@@ -66,7 +66,7 @@ extern crate alloc;
 
 use alloc::{boxed::Box, vec, vec::Vec};
 use core::{
-    array,
+    array, fmt,
     mem::size_of,
     ops::{Add, Div, Mul, Sub},
 };
@@ -440,6 +440,25 @@ impl From<grid::TooManyVoxels> for NewMvtError {
     }
 }
 
+impl fmt::Display for NewMvtError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NonFinite => write!(f, "at least one point had a non-finite value"),
+            Self::InvalidRadius => {
+                write!(f, "r_max + r_point was not a positive, finite value")
+            }
+            Self::TooManyVoxels => {
+                write!(
+                    f,
+                    "too many voxels or points for the index type to represent"
+                )
+            }
+        }
+    }
+}
+
+impl core::error::Error for NewMvtError {}
+
 #[derive(Clone, Debug)]
 /// A multilevel voxel tree, a structure for point cloud collision checking.
 ///
@@ -556,7 +575,8 @@ impl<const K: usize, A: Axis, I: Index> Mvt<K, A, I> {
     ///
     /// ```
     /// let points = [[0.0]];
-    /// let mvt = mvtable::Mvt::<1>::try_new(&points, f32::INFINITY).unwrap();
+    /// let mvt = mvtable::Mvt::<1>::try_new(&points, f32::INFINITY)?;
+    /// # Ok::<(), mvtable::NewMvtError>(())
     /// ```
     pub fn try_new(points: &[[A; K]], r_max: A) -> Result<Self, NewMvtError> {
         Self::try_with_point_radius(points, r_max, A::ZERO)
@@ -573,7 +593,8 @@ impl<const K: usize, A: Axis, I: Index> Mvt<K, A, I> {
     ///
     /// ```
     /// let points = [[0.0]];
-    /// let mvt = mvtable::Mvt::<1>::try_with_point_radius(&points, f32::INFINITY, 0.01).unwrap();
+    /// let mvt = mvtable::Mvt::<1>::try_with_point_radius(&points, f32::INFINITY, 0.01)?;
+    /// # Ok::<(), mvtable::NewMvtError>(())
     /// ```
     pub fn try_with_point_radius(
         points: &[[A; K]],

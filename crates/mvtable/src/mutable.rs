@@ -2,7 +2,7 @@
 //! construction, at the cost of performance.
 
 use alloc::vec::Vec;
-use core::{array, mem::size_of};
+use core::{array, fmt, mem::size_of};
 
 #[cfg(feature = "simd")]
 use core::simd::{Simd, cmp::SimdPartialOrd};
@@ -42,6 +42,31 @@ impl From<grid::TooManyVoxels> for NewMutableMvtError {
     }
 }
 
+impl fmt::Display for NewMutableMvtError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NonFinite => write!(f, "at least one point had a non-finite value"),
+            Self::InvalidRadius => {
+                write!(f, "r_max + r_point was not a positive, finite value")
+            }
+            Self::TooManyVoxels => {
+                write!(
+                    f,
+                    "too many voxels or points for the index type to represent"
+                )
+            }
+            Self::InvalidWorkspace => {
+                write!(
+                    f,
+                    "lo[k] > hi[k] for some axis k, so no valid workspace box exists"
+                )
+            }
+        }
+    }
+}
+
+impl core::error::Error for NewMutableMvtError {}
+
 #[non_exhaustive]
 #[derive(Clone, Debug, PartialEq, Eq)]
 /// The errors that can occur when calling [`MutableMvt::insert`] or
@@ -69,6 +94,26 @@ impl From<grid::TooManyVoxels> for InsertError {
         Self::TooManyVoxels
     }
 }
+
+impl fmt::Display for InsertError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::NonFinite => write!(f, "the point had a non-finite value"),
+            Self::TooManyVoxels => {
+                write!(
+                    f,
+                    "too many voxels or points for the index type to represent"
+                )
+            }
+            Self::NoWorkspaceBounds => write!(
+                f,
+                "this MutableMvt has no established workspace bounds to insert into"
+            ),
+        }
+    }
+}
+
+impl core::error::Error for InsertError {}
 
 /// Per-voxel storage for [`MutableMvt`].
 #[derive(Clone, Debug)]
@@ -133,8 +178,9 @@ impl<A: Axis, const K: usize> MutableVoxel<A, K> {
 /// let mut mvt = MutableMvt::<2>::new(&points, 2.0);
 /// assert!(!mvt.collides(&[10.0, 10.0], 1.0));
 ///
-/// mvt.insert(&[10.0, 10.0]).unwrap();
+/// mvt.insert(&[10.0, 10.0])?;
 /// assert!(mvt.collides(&[10.0, 10.0], 1.0));
+/// # Ok::<(), mvtable::InsertError>(())
 /// ```
 pub struct MutableMvt<const K: usize, A = f32, I = u32> {
     /// The number of voxels along each axis of the grid, fixed at construction. All-zero if this
@@ -213,7 +259,8 @@ impl<const K: usize, A: Axis, I: Index> MutableMvt<K, A, I> {
     ///
     /// ```
     /// let points = [[0.0]];
-    /// let mvt = mvtable::MutableMvt::<1>::try_new(&points, f32::INFINITY).unwrap();
+    /// let mvt = mvtable::MutableMvt::<1>::try_new(&points, f32::INFINITY)?;
+    /// # Ok::<(), mvtable::NewMutableMvtError>(())
     /// ```
     pub fn try_new(points: &[[A; K]], r_max: A) -> Result<Self, NewMutableMvtError> {
         Self::try_with_point_radius(points, r_max, A::ZERO)
@@ -230,8 +277,8 @@ impl<const K: usize, A: Axis, I: Index> MutableMvt<K, A, I> {
     ///
     /// ```
     /// let points = [[0.0]];
-    /// let mvt =
-    ///     mvtable::MutableMvt::<1>::try_with_point_radius(&points, f32::INFINITY, 0.01).unwrap();
+    /// let mvt = mvtable::MutableMvt::<1>::try_with_point_radius(&points, f32::INFINITY, 0.01)?;
+    /// # Ok::<(), mvtable::NewMutableMvtError>(())
     /// ```
     pub fn try_with_point_radius(
         points: &[[A; K]],
@@ -292,8 +339,9 @@ impl<const K: usize, A: Axis, I: Index> MutableMvt<K, A, I> {
     ///
     /// ```
     /// let mut mvt = mvtable::MutableMvt::<2>::with_workspace([0.0, 0.0], [10.0, 10.0], 1.0, 0.0);
-    /// mvt.insert(&[5.0, 5.0]).unwrap();
+    /// mvt.insert(&[5.0, 5.0])?;
     /// assert!(mvt.collides(&[5.0, 5.0], 0.1));
+    /// # Ok::<(), mvtable::InsertError>(())
     /// ```
     #[must_use]
     pub fn with_workspace(lo: [A; K], hi: [A; K], r_max: A, r_point: A) -> Self {
@@ -311,8 +359,8 @@ impl<const K: usize, A: Axis, I: Index> MutableMvt<K, A, I> {
     /// # Examples
     ///
     /// ```
-    /// let mvt =
-    ///     mvtable::MutableMvt::<2>::try_with_workspace([0.0, 0.0], [10.0, 10.0], 1.0, 0.0).unwrap();
+    /// let mvt = mvtable::MutableMvt::<2>::try_with_workspace([0.0, 0.0], [10.0, 10.0], 1.0, 0.0)?;
+    /// # Ok::<(), mvtable::NewMutableMvtError>(())
     /// ```
     pub fn try_with_workspace(
         lo: [A; K],
@@ -394,8 +442,9 @@ impl<const K: usize, A: Axis, I: Index> MutableMvt<K, A, I> {
     ///
     /// ```
     /// let mut mvt = mvtable::MutableMvt::<2>::new(&[[0.0, 0.0]], 1.0);
-    /// mvt.insert(&[5.0, 5.0]).unwrap();
+    /// mvt.insert(&[5.0, 5.0])?;
     /// assert!(mvt.collides(&[5.0, 5.0], 0.1));
+    /// # Ok::<(), mvtable::InsertError>(())
     /// ```
     pub fn insert(&mut self, point: &[A; K]) -> Result<(), InsertError> {
         if point.iter().any(|x| !x.is_finite()) {
@@ -421,9 +470,10 @@ impl<const K: usize, A: Axis, I: Index> MutableMvt<K, A, I> {
     ///
     /// ```
     /// let mut mvt = mvtable::MutableMvt::<2>::new(&[[0.0, 0.0]], 1.0);
-    /// mvt.insert_points(&[[5.0, 5.0], [-5.0, -5.0]]).unwrap();
+    /// mvt.insert_points(&[[5.0, 5.0], [-5.0, -5.0]])?;
     /// assert!(mvt.collides(&[5.0, 5.0], 0.1));
     /// assert!(mvt.collides(&[-5.0, -5.0], 0.1));
+    /// # Ok::<(), mvtable::InsertError>(())
     /// ```
     pub fn insert_points(&mut self, points: &[[A; K]]) -> Result<(), InsertError> {
         for p in points {
