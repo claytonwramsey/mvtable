@@ -34,6 +34,11 @@ pub enum NewMutableMvtError {
     /// [`MutableMvt::try_with_workspace`] was called with `lo[k] > hi[k]` for some axis `k`, so
     /// no valid workspace box exists.
     InvalidWorkspace,
+    /// [`MutableMvt::try_new`] or [`MutableMvt::try_with_point_radius`] was called with an empty
+    /// point cloud, which has no bounding box to size the grid from. Use
+    /// [`MutableMvt::try_with_workspace`] instead to construct an empty `MutableMvt` with
+    /// explicit workspace bounds.
+    EmptyPointCloud,
 }
 
 impl From<grid::TooManyVoxels> for NewMutableMvtError {
@@ -61,6 +66,10 @@ impl fmt::Display for NewMutableMvtError {
                     "lo[k] > hi[k] for some axis k, so no valid workspace box exists"
                 )
             }
+            Self::EmptyPointCloud => write!(
+                f,
+                "the point cloud was empty, so no workspace bounds could be inferred from it"
+            ),
         }
     }
 }
@@ -84,9 +93,6 @@ pub enum InsertError {
     NonFinite,
     /// There were too many voxels or points to be represented without integer overflow.
     TooManyVoxels,
-    /// This `MutableMvt` was constructed with no points, so it has no workspace bounds to insert
-    /// into. Construct with at least one point instead.
-    NoWorkspaceBounds,
 }
 
 impl From<grid::TooManyVoxels> for InsertError {
@@ -105,10 +111,6 @@ impl fmt::Display for InsertError {
                     "too many voxels or points for the index type to represent"
                 )
             }
-            Self::NoWorkspaceBounds => write!(
-                f,
-                "this MutableMvt has no established workspace bounds to insert into"
-            ),
         }
     }
 }
@@ -161,13 +163,16 @@ impl<A: Axis, const K: usize> MutableVoxel<A, K> {
 ///
 /// # Workspace bounds
 ///
-/// Like [`Mvt`](crate::Mvt), a `MutableMvt`'s grid is sized to fit the points it is constructed
-/// with, and that sizing is then fixed for the rest of the structure's life: a `MutableMvt`
-/// constructed with no points has no workspace to insert into (see
-/// [`InsertError::NoWorkspaceBounds`]). Points inserted later that fall outside the original
-/// workspace are not rejected, but the process for handling them activates slower paths that reduce
-/// query performance. For best performance, construct a `MutableMvt` with a representative initial
-/// point cloud spanning the region future insertions will land in.
+/// Like [`Mvt`](crate::Mvt), a `MutableMvt`'s grid is sized once, at construction, and that
+/// sizing is then fixed for the rest of the structure's life. [`Self::new`]/
+/// [`Self::with_point_radius`] size the grid from the given point cloud, so they require it to
+/// be non-empty. [`Self::with_workspace`] instead lets you set the bounds explicitly, so it can
+/// construct an empty `MutableMvt`. Either way, a `MutableMvt` always has established workspace
+/// bounds, so [`Self::insert`]/[`Self::insert_points`] can never fail for lack of them. Points
+/// inserted later that fall outside the original workspace are not rejected, but the process for
+/// handling them activates slower paths that reduce query performance. For best performance,
+/// construct a `MutableMvt` with a representative initial point cloud (or workspace box) spanning
+/// the region future insertions will land in.
 ///
 /// # Examples
 ///
@@ -183,8 +188,7 @@ impl<A: Axis, const K: usize> MutableVoxel<A, K> {
 /// # Ok::<(), mvtable::InsertError>(())
 /// ```
 pub struct MutableMvt<const K: usize, A = f32, I = u32> {
-    /// The number of voxels along each axis of the grid, fixed at construction. All-zero if this
-    /// `MutableMvt` was constructed with no points and so has no established workspace yet.
+    /// The number of voxels along each axis of the grid, fixed at construction.
     grid_width: [I; K],
     /// The number of grid cells per unit length along each axis.
     scale: [A; K],
@@ -211,8 +215,9 @@ impl<const K: usize, A: Axis, I: Index> MutableMvt<K, A, I> {
     ///
     /// # Panics
     ///
-    /// This function will panic if any point contains a non-finite value, or if `r_max` is not a
-    /// positive, finite value.
+    /// This function will panic if `points` is empty, if any point contains a non-finite value,
+    /// or if `r_max` is not a positive, finite value. To construct an empty `MutableMvt`, use
+    /// [`Self::with_workspace`] instead.
     ///
     /// # Examples
     ///
@@ -232,8 +237,9 @@ impl<const K: usize, A: Axis, I: Index> MutableMvt<K, A, I> {
     ///
     /// # Panics
     ///
-    /// This function will panic if any point contains a non-finite value, or if
-    /// `r_max + r_point` is not a positive, finite value.
+    /// This function will panic if `points` is empty, if any point contains a non-finite value,
+    /// or if `r_max + r_point` is not a positive, finite value. To construct an empty
+    /// `MutableMvt`, use [`Self::with_workspace`] instead.
     ///
     /// # Examples
     ///
@@ -295,25 +301,15 @@ impl<const K: usize, A: Axis, I: Index> MutableMvt<K, A, I> {
             return Err(NewMutableMvtError::InvalidRadius);
         }
 
+        // an empty point cloud has no bounding box to size the grid from; construct with
+        // `Self::with_workspace` instead if an empty `MutableMvt` is wanted.
         let Some(bounding_box) = Aabb::bounding_box(points) else {
-            // no points: return an uninitialized MutableMvt (see `Self::initialized`); it has no
-            // workspace bounds, so `insert`/`insert_points` will return
-            // `InsertError::Uninitialized` until reconstructed with at least one point.
-            return Ok(Self {
-                grid_width: [I::ZERO; K],
-                scale: [A::ZERO; K],
-                grid_lo: [A::ZERO; K],
-                r_point,
-                global_aabb: Aabb::EMPTY,
-                tables: Vec::new(),
-                voxels: Vec::new(),
-            });
+            return Err(NewMutableMvtError::EmptyPointCloud);
         };
 
         let mut this = Self::try_with_workspace(bounding_box.lo, bounding_box.hi, r_max, r_point)?;
         // every point was already checked finite above, and the grid is already established, so
-        // `insert_initialized` (rather than the public `insert`) is both sufficient and avoids
-        // mixing `NewMutableMvtError` with `InsertError`'s unrelated `Uninitialized` variant.
+        // `insert_initialized` is sufficient and cannot fail except via `TooManyVoxels`.
         for p in points {
             this.insert_initialized(p)?;
         }
@@ -326,9 +322,9 @@ impl<const K: usize, A: Axis, I: Index> MutableMvt<K, A, I> {
     ///
     /// `r_max` is the maximum radius of the balls that will be queried against the tree; it is
     /// used, together with `r_point`, to size the grid's voxels, exactly as in
-    /// [`Self::with_point_radius`]. Unlike constructing with an empty point slice, the returned
-    /// `MutableMvt` already has established workspace bounds, so
-    /// [`Self::insert`]/[`Self::insert_points`] can be called immediately.
+    /// [`Self::with_point_radius`]. Unlike [`Self::new`]/[`Self::with_point_radius`], which infer
+    /// workspace bounds from a non-empty point cloud, this sets them explicitly, so it can
+    /// construct an empty `MutableMvt` that can be called on immediately.
     ///
     /// # Panics
     ///
@@ -394,16 +390,7 @@ impl<const K: usize, A: Axis, I: Index> MutableMvt<K, A, I> {
         })
     }
 
-    /// Whether this `MutableMvt`'s grid has been established (by construction with at least one
-    /// point). A `MutableMvt` constructed with no points has no workspace bounds, and so cannot
-    /// support [`Self::insert`]/[`Self::insert_points`] until reconstructed with at least one
-    /// point.
-    fn initialized(&self) -> bool {
-        self.grid_width != [I::ZERO; K]
-    }
-
-    /// Insert `point` into this `MutableMvt`'s grid, which the caller must already have
-    /// established (see [`Self::initialized`]); `point` must already be known finite.
+    /// Insert `point` into this `MutableMvt`'s grid; `point` must already be known finite.
     fn insert_initialized(&mut self, point: &[A; K]) -> Result<(), grid::TooManyVoxels> {
         let grid_width: [usize; K] = array::from_fn(|k| self.grid_width[k].to_usize());
         let coords = grid::point_to_grid_coords(point, self.grid_lo, self.scale, grid_width);
@@ -432,11 +419,9 @@ impl<const K: usize, A: Axis, I: Index> MutableMvt<K, A, I> {
     ///
     /// # Errors
     ///
-    /// Returns [`InsertError::NonFinite`] if `point` contains a non-finite value,
+    /// Returns [`InsertError::NonFinite`] if `point` contains a non-finite value, or
     /// [`InsertError::TooManyVoxels`] if inserting `point` would need more voxels or points than
-    /// the index type `I` can represent, and [`InsertError::NoWorkspaceBounds`] if this
-    /// `MutableMvt` was constructed with no points, and so has no workspace bounds to insert
-    /// into.
+    /// the index type `I` can represent.
     ///
     /// # Examples
     ///
@@ -449,9 +434,6 @@ impl<const K: usize, A: Axis, I: Index> MutableMvt<K, A, I> {
     pub fn insert(&mut self, point: &[A; K]) -> Result<(), InsertError> {
         if point.iter().any(|x| !x.is_finite()) {
             return Err(InsertError::NonFinite);
-        }
-        if !self.initialized() {
-            return Err(InsertError::NoWorkspaceBounds);
         }
         Ok(self.insert_initialized(point)?)
     }
@@ -837,9 +819,24 @@ mod tests {
     }
 
     #[test]
-    fn empty_cloud() {
+    fn empty_cloud_errors() {
         let points: [[f32; 2]; 0] = [];
-        let mvt = MutableMvt::<2>::new(&points, 1.0);
+        let err = MutableMvt::<2>::try_new(&points, 1.0).unwrap_err();
+        assert_eq!(err, NewMutableMvtError::EmptyPointCloud);
+    }
+
+    #[test]
+    #[should_panic(expected = "failed to construct MutableMvt")]
+    fn empty_cloud_panics() {
+        let points: [[f32; 2]; 0] = [];
+        let _ = MutableMvt::<2>::new(&points, 1.0);
+    }
+
+    #[test]
+    fn empty_cloud_via_with_workspace_never_collides() {
+        // an empty `MutableMvt` built through `with_workspace` (rather than `new`'s point-cloud
+        // path) must still behave correctly with no points inserted.
+        let mvt = MutableMvt::<2>::with_workspace([0.0, 0.0], [1.0, 1.0], 1.0, 0.0);
         assert!(!mvt.collides(&[0.0, 0.0], 100.0));
     }
 
@@ -1170,14 +1167,6 @@ mod tests {
                 "query {center:?}, radius {radius}"
             );
         }
-    }
-
-    #[test]
-    fn insert_into_uninitialized_errors() {
-        let points: [[f32; 2]; 0] = [];
-        let mut mvt = MutableMvt::<2>::new(&points, 1.0);
-        let err = mvt.insert(&[0.0, 0.0]).unwrap_err();
-        assert_eq!(err, InsertError::NoWorkspaceBounds);
     }
 
     #[test]

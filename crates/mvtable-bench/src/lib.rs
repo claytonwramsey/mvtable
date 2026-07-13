@@ -45,7 +45,13 @@ impl<const K: usize> Structure<K> for mvtable::MutableMvt<K, f32> {
     const NAME: &'static str = "mvtable_mutable";
 
     fn build(points: &[[f32; K]], r_range: (f32, f32)) -> Self {
-        Self::new(points, r_range.1)
+        if points.is_empty() {
+            // `MutableMvt::new` requires a non-empty point cloud to infer workspace bounds; an
+            // empty structure has no points to bound, so any placeholder workspace box works.
+            Self::with_workspace([0.0; K], [1.0; K], r_range.1, 0.0)
+        } else {
+            Self::new(points, r_range.1)
+        }
     }
 
     fn collides(&self, center: &[f32; K], radius: f32) -> bool {
