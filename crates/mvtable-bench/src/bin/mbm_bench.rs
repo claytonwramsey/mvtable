@@ -500,6 +500,38 @@ fn main() -> Result<(), Box<dyn Error>> {
                     )?;
                 }
 
+                let ctx = RowContext {
+                    structure: "mvtable_mutable",
+                    ..ctx
+                };
+                let tic = Instant::now();
+                let mvt_mutable = mvtable::MutableMvt::<3, f32>::new(&points, r_max);
+                write_construction_row(
+                    &mut out,
+                    ctx,
+                    n_queries,
+                    tic.elapsed().as_secs_f64() * 1e9,
+                )?;
+                write_memory_row(&mut out, ctx, mvt_mutable.memory_used())?;
+                bench_scalar(
+                    &mut out,
+                    ctx,
+                    &mvt_mutable,
+                    &scalar_queries,
+                    &colliding,
+                    &non_colliding,
+                )?;
+                if !simd_batches.is_empty() {
+                    bench_simd(
+                        &mut out,
+                        ctx,
+                        &mvt_mutable,
+                        &simd_batches,
+                        &batch_colliding,
+                        &batch_non_colliding,
+                    )?;
+                }
+
                 // `capt`: built once at `SIMD_L` lanes (rather than once at 1 lane for scalar and
                 // again at `SIMD_L` lanes for SIMD), reused for both benchmarks below.
                 let ctx = RowContext {

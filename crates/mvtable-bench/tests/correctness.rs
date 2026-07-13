@@ -16,6 +16,7 @@ use rand::{SeedableRng, rngs::SmallRng};
 /// against the brute-force oracle, panicking with full context on any disagreement.
 fn check_all<const K: usize>(points: &[[f32; K]], r_max: f32, queries: &[([f32; K], f32)]) {
     let mvt = mvtable::Mvt::<K, f32>::build(points, (0.0, r_max));
+    let mvt_mutable = mvtable::MutableMvt::<K, f32>::build(points, (0.0, r_max));
     let capt = capt::Capt::<K, f32, u32>::build(points, (0.0, r_max));
     let kdt = kiddo::ImmutableKdTree::<f32, K>::build(points, (0.0, r_max));
 
@@ -24,6 +25,10 @@ fn check_all<const K: usize>(points: &[[f32; K]], r_max: f32, queries: &[([f32; 
 
         for (name, actual) in [
             (mvtable::Mvt::<K, f32>::NAME, mvt.collides(&center, radius)),
+            (
+                mvtable::MutableMvt::<K, f32>::NAME,
+                mvt_mutable.collides(&center, radius),
+            ),
             (
                 capt::Capt::<K, f32, u32>::NAME,
                 capt.collides(&center, radius),

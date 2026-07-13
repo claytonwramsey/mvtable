@@ -61,6 +61,7 @@ fn bench_construction<S: Structure<3>>(
 fn construction(c: &mut Criterion) {
     let mut group = c.benchmark_group("construction");
     bench_construction::<mvtable::Mvt<3, f32>>(&mut group);
+    bench_construction::<mvtable::MutableMvt<3, f32>>(&mut group);
     bench_construction::<capt::Capt<3, f32, u32>>(&mut group);
     bench_construction::<kiddo::ImmutableKdTree<f32, 3>>(&mut group);
     group.finish();
@@ -105,6 +106,7 @@ fn query(c: &mut Criterion) {
     ];
     for (trace_name, trace_of) in traces {
         bench_query::<mvtable::Mvt<3, f32>>(&mut group, trace_name, trace_of);
+        bench_query::<mvtable::MutableMvt<3, f32>>(&mut group, trace_name, trace_of);
         bench_query::<capt::Capt<3, f32, u32>>(&mut group, trace_name, trace_of);
         bench_query::<kiddo::ImmutableKdTree<f32, 3>>(&mut group, trace_name, trace_of);
     }
@@ -132,7 +134,9 @@ fn to_simd_batches<const L: usize>(
 /// lanes to be queried with any `L` up to it.
 const MAX_L: usize = 8;
 
-/// Benchmark `mvtable`'s and `capt`'s scalar `collides`, once per trace.
+/// Benchmark `mvtable`'s and `capt`'s scalar `collides`, once per
+/// trace. `mvtable_mutable` is built by inserting every point one at a time (rather than
+/// `mvtable`'s single-shot `new`), to also capture the insertion-side cost of `MutableMvt`.
 fn bench_scalar_query(
     group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
     trace_name: &str,
@@ -143,6 +147,7 @@ fn bench_scalar_query(
         let points: Vec<[f32; 3]> = uniform_cloud(&mut rng, n, HALF_WIDTH);
         let queries = trace_of(&points, &mut rng);
         let mvt = mvtable::Mvt::<3, f32>::new(&points, R_MAX);
+        let mvt_mutable = mvtable::MutableMvt::<3, f32>::new(&points, R_MAX);
         // `n_lanes = 1` matches how `capt` is constructed for the plain scalar `query` group.
         let capt = capt::Capt::<3, f32, u32>::new(&points, (0.0, R_MAX), 1);
 
@@ -151,6 +156,15 @@ fn bench_scalar_query(
             b.iter(|| {
                 for (center, radius) in queries {
                     black_box(mvt.collides(center, *radius));
+                }
+            });
+        });
+
+        let id = BenchmarkId::new(format!("mvtable_mutable_scalar/{trace_name}"), n);
+        group.bench_with_input(id, &queries, |b, queries| {
+            b.iter(|| {
+                for (center, radius) in queries {
+                    black_box(mvt_mutable.collides(center, *radius));
                 }
             });
         });
@@ -166,8 +180,37 @@ fn bench_scalar_query(
     }
 }
 
-/// Benchmark `mvtable`'s and `capt`'s SIMD-batched `collides_simd` at lane width `L`, using the
-/// same point clouds and queries (grouped into batches of `L`) as [`bench_scalar_query`].
+/// Benchmark inserting `n` points one at a time into a fresh `MutableMvt`, seeded from a single
+/// initial point so the workspace roughly matches the final cloud, against building an
+/// equivalent `Mvt` in one shot.
+fn bench_insert(c: &mut Criterion) {
+    let mut group = c.benchmark_group("insert");
+    let mut rng = SmallRng::seed_from_u64(0);
+    for &n in &SIZES {
+        let points: Vec<[f32; 3]> = uniform_cloud(&mut rng, n, HALF_WIDTH);
+
+        let id = BenchmarkId::new("mvtable", n);
+        group.bench_with_input(id, &points, |b, points| {
+            b.iter(|| black_box(mvtable::Mvt::<3, f32>::new(points, R_MAX)));
+        });
+
+        let id = BenchmarkId::new("mvtable_mutable_insert_one_at_a_time", n);
+        group.bench_with_input(id, &points, |b, points| {
+            b.iter(|| {
+                let mut mvt = mvtable::MutableMvt::<3, f32>::new(&points[..1], R_MAX);
+                for p in &points[1..] {
+                    mvt.insert(p).unwrap();
+                }
+                black_box(mvt);
+            });
+        });
+    }
+    group.finish();
+}
+
+/// Benchmark `mvtable`'s (both `Mvt` and `MutableMvt`) and `capt`'s SIMD-batched `collides_simd`
+/// at lane width `L`, using the same point clouds and queries (grouped into batches of `L`) as
+/// [`bench_scalar_query`].
 fn bench_simd_query<const L: usize>(
     group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
     trace_name: &str,
@@ -178,6 +221,7 @@ fn bench_simd_query<const L: usize>(
         let points: Vec<[f32; 3]> = uniform_cloud(&mut rng, n, HALF_WIDTH);
         let queries = trace_of(&points, &mut rng);
         let mvt = mvtable::Mvt::<3, f32>::new(&points, R_MAX);
+        let mvt_mutable = mvtable::MutableMvt::<3, f32>::new(&points, R_MAX);
         let capt = capt::Capt::<3, f32, u32>::new(&points, (0.0, R_MAX), MAX_L);
         let batches = to_simd_batches::<L>(&queries);
 
@@ -186,6 +230,15 @@ fn bench_simd_query<const L: usize>(
             b.iter(|| {
                 for (centers, radii) in batches {
                     black_box(mvt.collides_simd(centers, *radii));
+                }
+            });
+        });
+
+        let id = BenchmarkId::new(format!("mvtable_mutable_simd_l{L}/{trace_name}"), n);
+        group.bench_with_input(id, &batches, |b, batches| {
+            b.iter(|| {
+                for (centers, radii) in batches {
+                    black_box(mvt_mutable.collides_simd(centers, *radii));
                 }
             });
         });
@@ -220,5 +273,5 @@ fn simd_query(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, construction, query, simd_query);
+criterion_group!(benches, construction, query, simd_query, bench_insert);
 criterion_main!(benches);

@@ -41,6 +41,18 @@ impl<const K: usize> Structure<K> for mvtable::Mvt<K, f32> {
     }
 }
 
+impl<const K: usize> Structure<K> for mvtable::MutableMvt<K, f32> {
+    const NAME: &'static str = "mvtable_mutable";
+
+    fn build(points: &[[f32; K]], r_range: (f32, f32)) -> Self {
+        Self::new(points, r_range.1)
+    }
+
+    fn collides(&self, center: &[f32; K], radius: f32) -> bool {
+        Self::collides(self, center, radius)
+    }
+}
+
 impl<const K: usize> Structure<K> for capt::Capt<K, f32, u32> {
     const NAME: &'static str = "capt";
 
@@ -84,6 +96,20 @@ pub trait SimdStructure<const K: usize>: Structure<K> {
 }
 
 impl<const K: usize> SimdStructure<K> for mvtable::Mvt<K, f32> {
+    fn collides_simd<const L: usize>(
+        &self,
+        centers: &[Simd<f32, L>; K],
+        radii: Simd<f32, L>,
+    ) -> bool
+    where
+        Simd<f32, L>: AxisSimd<L>,
+        <Simd<f32, L> as SimdPartialEq>::Mask: Copy,
+    {
+        Self::collides_simd(self, centers, radii)
+    }
+}
+
+impl<const K: usize> SimdStructure<K> for mvtable::MutableMvt<K, f32> {
     fn collides_simd<const L: usize>(
         &self,
         centers: &[Simd<f32, L>; K],
