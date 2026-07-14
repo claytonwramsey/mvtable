@@ -1,0 +1,25 @@
+[package]
+name = "mbm-plan-bench"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+mvtable = { path = "../mvtable", features = ["simd"] }
+mvtable-bench = { path = "../mvtable-bench" }
+mbm-extract = { path = "../mbm-extract" }
+capt = { version = "3.1", features = ["simd"] }
+kiddo = { version = "5", default-features = false }
+carom = { git = "ssh://git@github.com/KavrakiLab/rumple.git", version = "0.1.0", features = [
+    "panda",
+    "ur5",
+    "fetch",
+    "baxter",
+] }
+carom-core = { git = "ssh://git@github.com/KavrakiLab/rumple.git", version = "0.1.0" }
+mbm = { git = "ssh://git@github.com/KavrakiLab/rumple.git", version = "0.1.0" }
+rumple = { git = "ssh://git@github.com/KavrakiLab/rumple.git", version = "0.1.0", features = [
+    "kiddo",
+] }
+nalgebra = { version = "0.35.0", default-features = false, features = ["std"] }
+rand = { version = "0.10", default-features = false, features = ["std", "std_rng"] }

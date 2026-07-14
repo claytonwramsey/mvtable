@@ -509,6 +509,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "mbm-plan-bench"
+version = "0.1.0"
+dependencies = [
+ "capt",
+ "carom",
+ "carom-core",
+ "kiddo",
+ "mbm",
+ "mbm-extract",
+ "mvtable",
+ "mvtable-bench",
+ "nalgebra",
+ "rand",
+ "rumple",
+]
+
+[[package]]
 name = "memchr"
 version = "2.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
