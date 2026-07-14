@@ -50,6 +50,19 @@ let radius1 = 1.5;
 assert!(mvt.collides(&center, radius1));
 ```
 
+## Performance
+
+The performance of the MVT is excellent, outpacing even the SIMD-accelerated [CAPT](https://github.com/KavrakiLab/capt).
+
+![doc/mbm_throughput.svg](Plot of collision-checking throughput)
+
+In throughput benchmarks, we find that the MVT has superior query throughput on large point clouds to all other compared methods,
+despite having cheap construction times and memory costs.
+
+![doc/mbm_plan_times.svg](Plot of planning time distributions)
+
+These performance gains translate to motion planning, where we can see a respectable constant-factor speedup from MVTs on most robots.
+
 ## Optional features
 
 This crate exposes one feature, `simd`, which enables a SIMD-parallel interface for querying

@@ -168,7 +168,7 @@ def plot_query_panel(
                 label=label,
             )
     ax.set_title(title)
-    ax.set_ylabel("Time (Nanoseconds)" if is_first else "")
+    ax.set_ylabel("Time (Nanoseconds)")
 
 
 def main() -> None:
@@ -199,7 +199,7 @@ def main() -> None:
     axes[5].set_visible(False)  # only 5 panels are used in the 2x3 grid.
 
     handles, labels = axes[2].get_legend_handles_labels()
-    fig.supxlabel("Number of Points in Pointcloud", y=0.04)
+    fig.supxlabel("Number of Points in Pointcloud", y=0.07)
     fig.legend(
         handles,
         labels,
