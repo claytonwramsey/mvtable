@@ -16,10 +16,8 @@ jobs:
       matrix:
         os:
           - ubuntu-latest
-          # removed since github just hates me like that
-          # - windows-latest
-          # removed because macos is expensive for no reason
-          # - macOS-latest
+          - windows-latest
+          - macOS-latest
         toolchain:
           - nightly
         cargo_flags:
