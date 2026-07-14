@@ -16,7 +16,8 @@ jobs:
       matrix:
         os:
           - ubuntu-latest
-          - windows-latest
+          # Windows interacts badly with private keys
+          # - windows-latest
           - macOS-latest
         toolchain:
           - nightly
