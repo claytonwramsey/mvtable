@@ -2,8 +2,10 @@
 """Plot construction/memory/query throughput on MotionBenchMaker workloads.
 
 Reads `data/mbm_bench_results.csv` (produced by `cargo run --release -p mvtable-bench --bin
-mbm_bench`) and produces a 5-panel figure (construction time, memory, and average query time for
-all/colliding/non-colliding queries vs. point cloud size).
+mbm_bench`) and produces three figures: construction time, memory consumption, and query time.
+With `--titles` (used for the README) the query figure is a 3-panel (all/colliding/non-colliding
+queries) breakdown sharing a y-axis; without it (the default, for the blog) it's just the
+all-queries panel, which reads better at blog width.
 
 Use `--structures` to pick which ones appear:
 
@@ -26,7 +28,13 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
-from mbm_common import binned_line, density_hexbin, drop_unreliable_query_rows, lighten
+from mbm_common import (
+    binned_line,
+    density_hexbin,
+    drop_unreliable_query_rows,
+    lighten,
+    save_figure,
+)
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 RESULTS = ROOT / "data" / "mbm_bench_results.csv"
@@ -39,8 +47,8 @@ COLORS = {
     "kiddo": "#E69F00",
 }
 LABELS = {
-    "mvtable": "Mvt",
-    "mvtable_mutable": "MutableMvt",
+    "mvtable": "MVT",
+    "mvtable_mutable": "Mutable MVT",
     "capt": "CAPT",
     "kiddo": "kiddo",
 }
@@ -50,11 +58,13 @@ SIMD_LANES = 8
 # `kiddo` has no SIMD-batched query API, so it only ever has `lanes == 1` rows.
 SIMD_CAPABLE = {"mvtable", "mvtable_mutable", "capt"}
 
-QUERY_PANELS = [
-    ("all", "Query Time, All Queries"),
-    ("colliding", "Query Time, Colliding Queries"),
-    ("non_colliding", "Query Time, Non-Colliding Queries"),
-]
+# left-to-right order of the query panels in the 3-panel query figure.
+QUERY_METRICS = ["all", "colliding", "non_colliding"]
+QUERY_TITLES = {
+    "all": "Query Time, All Queries",
+    "colliding": "Query Time, Colliding Queries",
+    "non_colliding": "Query Time, Non-Colliding Queries",
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -69,11 +79,19 @@ def parse_args() -> argparse.Namespace:
         "Fewer structures make a busy figure easier to read.",
     )
     parser.add_argument(
-        "--out",
+        "--out-prefix",
         type=pathlib.Path,
         default=None,
-        help="Output SVG path (default: doc/mbm_throughput.svg if every structure is selected, "
-        "otherwise doc/mbm_throughput_<structures>.svg).",
+        help="Base path for the three output SVGs, suffixed with '_construction.svg', "
+        "'_memory.svg', and '_query.svg' (+ matching .png files). Default: "
+        "doc/mbm_throughput if every structure is selected, otherwise "
+        "doc/mbm_throughput_<structures>.",
+    )
+    parser.add_argument(
+        "--titles",
+        action="store_true",
+        help="Add per-panel chart titles. Off by default so the SVGs drop cleanly into a page "
+        "that supplies its own captions.",
     )
     args = parser.parse_args()
 
@@ -85,15 +103,19 @@ def parse_args() -> argparse.Namespace:
     if not args.structures:
         parser.error("--structures can't be empty")
 
-    if args.out is None:
+    if args.out_prefix is None:
         if set(args.structures) == set(ALL_STRUCTURES):
-            args.out = ROOT / "doc" / "mbm_throughput.svg"
+            args.out_prefix = ROOT / "doc" / "mbm_throughput"
         else:
-            args.out = ROOT / "doc" / f"mbm_throughput_{'-'.join(args.structures)}.svg"
+            args.out_prefix = (
+                ROOT / "doc" / f"mbm_throughput_{'-'.join(args.structures)}"
+            )
     return args
 
 
-def plot_construction(ax, df: pd.DataFrame, structures: list) -> None:
+def plot_construction(
+    ax, df: pd.DataFrame, structures: list, title: str | None
+) -> None:
     construction = df[df.metric == "construction"].copy()
     construction["ms"] = construction.ns_per_op / 1e6
     extent = (
@@ -107,12 +129,15 @@ def plot_construction(ax, df: pd.DataFrame, structures: list) -> None:
         if sub.empty:
             continue
         density_hexbin(ax, sub.n_points, sub.ms, COLORS[name], extent)
-        binned_line(ax, sub.n_points, sub.ms, COLORS[name], annotate=False)
-    ax.set_title("Construction Time")
-    ax.set_ylabel("Time (Milliseconds)")
+        binned_line(
+            ax, sub.n_points, sub.ms, COLORS[name], annotate=False, label=LABELS[name]
+        )
+    ax.set_ylabel("Construction time (milliseconds)")
+    if title:
+        ax.set_title(title)
 
 
-def plot_memory(ax, df: pd.DataFrame, structures: list) -> None:
+def plot_memory(ax, df: pd.DataFrame, structures: list, title: str | None) -> None:
     memory = df[df.metric == "memory"].copy()
     memory["kib"] = (
         memory.ns_per_op / 1024
@@ -128,9 +153,12 @@ def plot_memory(ax, df: pd.DataFrame, structures: list) -> None:
         if sub.empty:
             continue
         density_hexbin(ax, sub.n_points, sub.kib, COLORS[name], extent)
-        binned_line(ax, sub.n_points, sub.kib, COLORS[name], annotate=False)
-    ax.set_title("Memory Consumption")
+        binned_line(
+            ax, sub.n_points, sub.kib, COLORS[name], annotate=False, label=LABELS[name]
+        )
     ax.set_ylabel("Memory (KiB)")
+    if title:
+        ax.set_title(title)
 
 
 def plot_query_panel(
@@ -138,9 +166,9 @@ def plot_query_panel(
     df: pd.DataFrame,
     structures: list,
     metric: str,
-    title: str,
     extent,
     is_first: bool,
+    title: str | None,
 ) -> None:
     query = df[df.metric == metric]
     for name in structures:
@@ -167,8 +195,42 @@ def plot_query_panel(
                 annotate=False,
                 label=label,
             )
-    ax.set_title(title)
-    ax.set_ylabel("Time (Nanoseconds)")
+    if is_first:
+        ax.set_ylabel("Time (Nanoseconds)")
+    if title:
+        ax.set_title(title)
+
+
+def finish_single_panel(ax, xlabel: str) -> None:
+    ax.set_xscale("log")
+    ax.set_yscale("log")
+    ax.set_xlabel(xlabel)
+    sns.despine(ax=ax)
+
+
+def legend_order(handles, labels, pin_first: str | None = None):
+    """Reorder legend entries to match the plotted lines' relative vertical order at the left
+    edge of the plot (where a left-to-right reader looks first), so e.g. the highest series
+    (CAPT, for construction time) reads first/top in the legend rather than in a fixed
+    structure order.
+
+    `pin_first`, if given, forces that label to the top regardless of its left-edge position -
+    for the memory panel, where CAPT starts close to the pack but leads for nearly the whole
+    plot, so top-of-legend is the more honest read than "whatever's highest at x=0"."""
+    order = sorted(range(len(handles)), key=lambda i: handles[i].get_ydata()[0], reverse=True)
+    if pin_first is not None:
+        order = sorted(order, key=lambda i: labels[i] != pin_first)
+    return [handles[i] for i in order], [labels[i] for i in order]
+
+
+def save_single_panel(
+    fig, ax, xlabel: str, out: pathlib.Path, crop: bool, pin_legend_first: str | None = None
+) -> None:
+    finish_single_panel(ax, xlabel)
+    handles, labels = legend_order(*ax.get_legend_handles_labels(), pin_first=pin_legend_first)
+    ax.legend(handles, labels, frameon=False)
+    fig.tight_layout()
+    save_figure(fig, out, crop=crop)
 
 
 def main() -> None:
@@ -177,29 +239,77 @@ def main() -> None:
     df = df[df.structure.isin(args.structures)]
     df = drop_unreliable_query_rows(df)
 
-    fig, axes = plt.subplots(2, 3, figsize=(15, 9))
-    axes = axes.flatten()
+    xlabel = "Number of points in point cloud"
+    crop = not args.titles
 
-    plot_construction(axes[0], df, args.structures)
-    plot_memory(axes[1], df, args.structures)
+    # construction time
+    fig, ax = plt.subplots(figsize=(5, 4.5))
+    plot_construction(
+        ax, df, args.structures, title="Construction Time" if args.titles else None
+    )
+    save_single_panel(
+        fig,
+        ax,
+        xlabel,
+        args.out_prefix.parent / f"{args.out_prefix.name}_construction.svg",
+        crop,
+    )
 
-    # share one y-extent across all three query-time panels so they stay directly comparable.
-    query_metrics = [metric for metric, _ in QUERY_PANELS]
-    query_all = df[df.metric.isin(query_metrics)]
+    # memory consumption
+    fig, ax = plt.subplots(figsize=(5, 4.5))
+    plot_memory(
+        ax, df, args.structures, title="Memory Consumption" if args.titles else None
+    )
+    save_single_panel(
+        fig,
+        ax,
+        xlabel,
+        args.out_prefix.parent / f"{args.out_prefix.name}_memory.svg",
+        crop,
+        pin_legend_first=LABELS["capt"],
+    )
+
+    query_out = args.out_prefix.parent / f"{args.out_prefix.name}_query.svg"
+    if not args.titles:
+        # the blog embeds figures at a width where the 3-panel breakdown below is hard to read;
+        # just the all-queries panel carries the same headline result more legibly.
+        all_queries = df[df.metric == "all"]
+        extent = (
+            all_queries.n_points.min(),
+            all_queries.n_points.max(),
+            all_queries.ns_per_op.min(),
+            all_queries.ns_per_op.max(),
+        )
+        fig, ax = plt.subplots(figsize=(5, 4.5))
+        plot_query_panel(
+            ax, df, args.structures, "all", extent, is_first=True, title=None
+        )
+        save_single_panel(fig, ax, xlabel, query_out, crop)
+        return
+
+    # query time, 3 panels (all / colliding / non-colliding) sharing one y-axis, for the README
+    # where there's room (and surrounding prose) to explain the breakdown.
+    query_all = df[df.metric.isin(QUERY_METRICS)]
     extent = (
         query_all.n_points.min(),
         query_all.n_points.max(),
         query_all.ns_per_op.min(),
         query_all.ns_per_op.max(),
     )
-    for i, (ax, (metric, title)) in enumerate(zip(axes[2:], QUERY_PANELS)):
+    fig, axes = plt.subplots(1, 3, figsize=(15, 4.5), sharey=True)
+    for i, (ax, metric) in enumerate(zip(axes, QUERY_METRICS)):
         plot_query_panel(
-            ax, df, args.structures, metric, title, extent, is_first=(i == 0)
+            ax,
+            df,
+            args.structures,
+            metric,
+            extent,
+            is_first=(i == 0),
+            title=QUERY_TITLES[metric],
         )
-    axes[5].set_visible(False)  # only 5 panels are used in the 2x3 grid.
-
-    handles, labels = axes[2].get_legend_handles_labels()
-    fig.supxlabel("Number of Points in Pointcloud", y=0.07)
+        finish_single_panel(ax, "")
+    handles, labels = legend_order(*axes[0].get_legend_handles_labels())
+    fig.supxlabel(xlabel, y=0.055)
     fig.legend(
         handles,
         labels,
@@ -208,25 +318,8 @@ def main() -> None:
         frameon=False,
         bbox_to_anchor=(0.5, 0.0),
     )
-
-    for ax in axes:
-        ax.set_xscale("log")
-        ax.set_yscale("log")
-        ax.set_xlabel("")
-        sns.despine(ax=ax)
-
-    n_robots = df.dataset.apply(lambda s: s.split("/")[0]).nunique()
-    n_workloads = df.dataset.nunique()
-    fig.suptitle(
-        "Construction/memory/query throughput on real MotionBenchMaker motion-planning workloads "
-        f"({n_robots} robots, {n_workloads} benchmark environments)"
-    )
-    fig.tight_layout(rect=(0, 0.08, 1, 0.96))
-    args.out.parent.mkdir(exist_ok=True)
-    fig.savefig(args.out)
-    fig.savefig(args.out.with_suffix(".png"), dpi=150)
-    print(f"wrote {args.out}")
-    print(f"wrote {args.out.with_suffix('.png')}")
+    fig.tight_layout(rect=(0, 0.065, 1, 1))
+    save_figure(fig, query_out)
 
 
 if __name__ == "__main__":

@@ -3,8 +3,8 @@
 
 Reads `data/mbm_plan_results.csv` (produced by `cargo run --release -p mbm-plan-bench`).
 
-Produces a two-row figure: a violin plot of solve-time distributions faceted by
-robot with backend as hue, and a solve-rate bar chart underneath it for context.
+Produces a violin plot of solve-time distributions faceted by robot with backend as hue. See
+`plot_baxter_solve_time.py` for the blog's single-robot variant of this figure.
 
     python3 scripts/plot_mbm_plan.py
     python3 scripts/plot_mbm_plan.py --structures mvtable,capt
@@ -19,7 +19,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
-from mbm_common import lighten
+from mbm_common import lighten, save_figure
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 RESULTS = ROOT / "data" / "mbm_plan_results.csv"
@@ -43,12 +43,12 @@ COLORS = {
     "kiddo": "#E69F00",
 }
 LABELS = {
-    "mvtable": "Mvt",
-    "mvtable_simd": "Mvt SIMD",
-    "mvtable_mutable": "MutableMvt",
-    "mvtable_mutable_simd": "MutableMvt SIMD",
+    "mvtable": "MVT",
+    "mvtable_simd": "MVT (SIMD x8)",
+    "mvtable_mutable": "Mutable MVT",
+    "mvtable_mutable_simd": "Mutable MVT (SIMD x8)",
     "capt": "CAPT",
-    "capt_simd": "CAPT SIMD",
+    "capt_simd": "CAPT (SIMD x8)",
     "kiddo": "kiddo",
 }
 ROBOT_ORDER = ["panda", "ur5", "fetch", "baxter"]
@@ -76,6 +76,12 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Output SVG path (default: doc/mbm_plan_times.svg, or "
         "doc/mbm_plan_times_<structures>.svg if a subset of structures is selected).",
+    )
+    parser.add_argument(
+        "--titles",
+        action="store_true",
+        help="Add a chart title. Off by default so the SVG drops cleanly into a page that "
+        "supplies its own captions.",
     )
     args = parser.parse_args()
 
@@ -113,39 +119,15 @@ def plot_solve_time_violins(
         cut=0,
         linewidth=0.75,
         log_scale=True,
+        width=1.0,
     )
     ax.set_ylabel("Solve Time (Seconds)")
-    ax.set_xlabel("")
+    ax.set_xlabel("Robot")
     handles, labels = ax.get_legend_handles_labels()
     ax.legend(
         [], [], frameon=False
     )  # the figure-level legend below carries this instead.
     return handles, [LABELS[name] for name in labels]
-
-
-def plot_solve_rate(ax, df: pd.DataFrame, structures: list) -> None:
-    robots = [r for r in ROBOT_ORDER if r in df.robot.unique()]
-    rate = (
-        df.groupby(["robot", "structure"], observed=True)
-        .solved.mean()
-        .mul(100)
-        .rename("solve_rate")
-        .reset_index()
-    )
-    sns.barplot(
-        data=rate,
-        x="robot",
-        y="solve_rate",
-        hue="structure",
-        order=robots,
-        hue_order=structures,
-        palette=COLORS,
-        ax=ax,
-    )
-    ax.set_ylabel("Solve Rate (%)")
-    ax.set_xlabel("Robot")
-    ax.set_ylim(0, 100)
-    ax.legend([], [], frameon=False)
 
 
 def main() -> None:
@@ -159,12 +141,9 @@ def main() -> None:
         df["total_secs"] = df.time_secs + df.construction_secs
         time_col = "total_secs"
 
-    fig, (ax_time, ax_rate) = plt.subplots(
-        2, 1, figsize=(12, 8), height_ratios=[3, 1], sharex=True
-    )
+    fig, ax_time = plt.subplots(figsize=(12, 6))
 
     handles, labels = plot_solve_time_violins(ax_time, df, args.structures, time_col)
-    plot_solve_rate(ax_rate, df, args.structures)
 
     fig.legend(
         handles,
@@ -175,21 +154,14 @@ def main() -> None:
         bbox_to_anchor=(0.5, 0.0),
     )
 
-    for ax in (ax_time, ax_rate):
-        sns.despine(ax=ax)
+    sns.despine(ax=ax_time)
 
-    title_metric = (
-        "total (construction + solve) time"
-        if args.include_construction
-        else "solve time"
-    )
-    fig.suptitle(f"Solve Time by Collision Checking Backend\n{title_metric}")
-    fig.tight_layout(rect=(0, 0.06, 1, 0.94))
-    args.out.parent.mkdir(exist_ok=True)
-    fig.savefig(args.out)
-    fig.savefig(args.out.with_suffix(".png"), dpi=150)
-    print(f"wrote {args.out}")
-    print(f"wrote {args.out.with_suffix('.png')}")
+    if args.titles:
+        fig.suptitle("Solve Time by Collision Checking Backend")
+        fig.tight_layout(rect=(0, 0.045, 1, 0.9))
+    else:
+        fig.tight_layout(rect=(0, 0.045, 1, 1))
+    save_figure(fig, args.out, crop=not args.titles)
 
 
 if __name__ == "__main__":

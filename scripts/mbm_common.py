@@ -11,6 +11,8 @@ min/max across a whole figure. Filtering out rows whose
 `n_queries` is too small to average out that kind of noise avoids treating it as a real result.
 """
 
+import pathlib
+
 import numpy as np
 import pandas as pd
 from matplotlib import patheffects
@@ -32,6 +34,24 @@ def drop_unreliable_query_rows(df: pd.DataFrame, verbose: bool = True) -> pd.Dat
             f"{MIN_QUERIES_FOR_RELIABLE_AVERAGE} queries (unreliable average, see mbm_common.py)"
         )
     return df[~unreliable].copy()
+
+
+def save_figure(fig, out: pathlib.Path, crop: bool = False) -> None:
+    """Write `fig` to `out` (SVG, transparent background so it renders on dark and light
+    pages alike) and to a same-named `.png` (opaque, for contexts that need a raster).
+
+    `crop=True` trims the figure to the bounding box of its artists (no outer margin), for
+    embedding on a page that supplies its own layout/padding rather than relying on matplotlib's
+    figure-sized canvas."""
+    out.parent.mkdir(exist_ok=True)
+    save_kwargs = {"transparent": True}
+    if crop:
+        save_kwargs["bbox_inches"] = "tight"
+        save_kwargs["pad_inches"] = 0
+    fig.savefig(out, **save_kwargs)
+    # fig.savefig(out.with_suffix(".png"), dpi=150)
+    print(f"wrote {out}")
+    print(f"wrote {out.with_suffix('.png')}")
 
 
 def geomean(x: pd.Series) -> float:
@@ -111,7 +131,7 @@ def binned_line(
         color=color,
         linewidth=2.5,
         linestyle=linestyle,
-        marker="o",
+        # marker="o",
         markersize=4,
         label=label,
     )

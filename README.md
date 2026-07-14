@@ -54,7 +54,9 @@ assert!(mvt.collides(&center, radius1));
 
 The performance of the MVT is excellent, outpacing even the SIMD-accelerated [CAPT](https://github.com/KavrakiLab/capt).
 
-![Plot of collision-checking throughput](doc/mbm_throughput.svg)
+![Plot of construction time throughput](doc/mbm_throughput_construction.svg)
+![Plot of memory consumption throughput](doc/mbm_throughput_memory.svg)
+![Plot of query time throughput](doc/mbm_throughput_query.svg)
 
 In throughput benchmarks, we find that the MVT has superior query throughput on large point clouds to all other compared methods,
 despite having cheap construction times and memory costs.
