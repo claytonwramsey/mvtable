@@ -87,6 +87,69 @@ impl<const K: usize> Structure<K> for kiddo::ImmutableKdTree<f32, K> {
     }
 }
 
+/// Replicate `std`'s `Vec` amortized-growth policy: given a `Vec` reserved with
+/// `Vec::with_capacity(initial_capacity)` and then grown one `push` at a time up to
+/// `final_len` elements, return its resulting `capacity()`.
+///
+/// This is unstable, non-contractual `std`
+/// behavior (not guaranteed by the `Vec` API), but has been stable in practice for a long time and
+/// was confirmed to match exactly for every case this crate's usage hits.
+#[must_use]
+fn simulate_vec_growth(initial_capacity: usize, final_len: usize, elem_size: usize) -> usize {
+    if final_len == 0 {
+        return initial_capacity;
+    }
+    let mut cap = initial_capacity;
+    if cap == 0 {
+        // `std`'s `min_non_zero_cap`: 8 for zero-sized-adjacent (1-byte) elements, 1 for large
+        // (>1024-byte) elements, 4 otherwise.
+        cap = if elem_size == 1 {
+            8
+        } else if elem_size <= 1024 {
+            4
+        } else {
+            1
+        };
+    }
+    while cap < final_len {
+        cap = cap.saturating_mul(2).max(cap + 1);
+    }
+    cap
+}
+
+/// Compute the total memory used (stack + heap) by a `kiddo::ImmutableKdTree<f32, K>`, measured
+/// in bytes.
+///
+/// `kiddo` exposes no such method, and its fields are private, so this is computed analytically
+/// from [`kiddo::ImmutableKdTree::size`].
+/// This was experimentally validated against a patched kiddo implementation.
+#[must_use]
+pub fn kiddo_memory_used<const K: usize>(tree: &kiddo::ImmutableKdTree<f32, K>) -> usize {
+    /// `kiddo::ImmutableKdTree<A, K>`'s fixed leaf bucket size (its `B` const-generic param).
+    const B: usize = 32;
+
+    let item_count = tree.size();
+    let leaf_node_count_raw = item_count.div_ceil(B);
+    let leaf_node_count = leaf_node_count_raw.max(1);
+    let stem_node_count = if leaf_node_count < 2 {
+        0
+    } else {
+        leaf_node_count.next_power_of_two()
+    };
+    let leaf_extents_len = stem_node_count.max(1);
+    let leaf_extents_cap = simulate_vec_growth(
+        leaf_node_count_raw,
+        leaf_extents_len,
+        size_of::<(u32, u32)>(),
+    );
+
+    size_of::<kiddo::ImmutableKdTree<f32, K>>()
+        + stem_node_count * size_of::<f32>()
+        + K * item_count * size_of::<f32>()
+        + item_count * size_of::<u64>()
+        + leaf_extents_cap * size_of::<(u32, u32)>()
+}
+
 /// [`Structure`]s that additionally support SIMD-batched collision queries.
 pub trait SimdStructure<const K: usize>: Structure<K> {
     /// Determine whether any point in the structure lies within the corresponding lane of `radii`

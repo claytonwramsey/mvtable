@@ -46,3 +46,38 @@ fn mutable_uses_more_memory_clustered() {
          ({immutable_bytes} bytes) for the same clustered point cloud"
     );
 }
+
+/// `kiddo_memory_used`'s stem/leaf-count formulas branch on bucket-boundary crossings (`B` = 32,
+/// see its doc comment), so exercise those boundaries plus the empty tree rather than just one
+/// arbitrary size.
+///
+/// Excludes `n=0` from the monotonicity sweep: an empty tree's `leaf_extents` `Vec` is reserved
+/// with `Vec::with_capacity(0)`, so its first (and only) push hits `std`'s `min_non_zero_cap`
+/// floor and ends up with a *larger* capacity (4 elements) than a single-point tree's `leaf_extents`
+/// (reserved with capacity 1, filled to exactly 1, no floor triggered) — a real, verified quirk of
+/// capacity-based accounting (see `simulate_vec_growth`'s doc comment), not a formula bug.
+#[test]
+fn kiddo_memory_used_grows_monotonically_across_bucket_boundaries() {
+    let mut rng = SmallRng::seed_from_u64(3);
+    let points = uniform_cloud::<_, 3>(&mut rng, 20_000, 5.0);
+
+    let mut prev_bytes = 0;
+    for n in [1, 2, 31, 32, 33, 63, 64, 65, 1000, 20_000] {
+        let tree = kiddo::ImmutableKdTree::<f32, 3>::new_from_slice(&points[..n]);
+        let bytes = mvtable_bench::kiddo_memory_used(&tree);
+        assert!(
+            bytes > prev_bytes,
+            "kiddo_memory_used should strictly increase with n, got {bytes} bytes at n={n} \
+             (previous n's value was {prev_bytes})"
+        );
+        prev_bytes = bytes;
+    }
+}
+
+/// The empty tree is a degenerate edge case (see the doc comment above) - just check it doesn't
+/// panic and produces a positive byte count, rather than folding it into the monotonicity sweep.
+#[test]
+fn kiddo_memory_used_empty_tree_does_not_panic() {
+    let tree = kiddo::ImmutableKdTree::<f32, 3>::new_from_slice(&[]);
+    assert!(mvtable_bench::kiddo_memory_used(&tree) > 0);
+}

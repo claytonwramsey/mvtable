@@ -579,6 +579,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     n_queries,
                     tic.elapsed().as_secs_f64() * 1e9,
                 )?;
+                write_memory_row(&mut out, ctx, mvtable_bench::kiddo_memory_used(&kdt))?;
                 bench_scalar(
                     &mut out,
                     ctx,
