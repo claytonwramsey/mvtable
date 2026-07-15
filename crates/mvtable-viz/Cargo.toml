@@ -1,0 +1,13 @@
+[package]
+name = "mvtable-viz"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+mvtable = { path = "../mvtable" }
+rerun = "0.34"
+rand = { version = "0.10", default-features = false, features = ["std", "std_rng"] }
+
+[[bin]]
+name = "grid_construction"
