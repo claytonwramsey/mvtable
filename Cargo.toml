@@ -2,9 +2,6 @@
 resolver = "3"
 members = ["crates/*"]
 
-[patch.crates-io]
-capt = { path = "../capt/capt" }
-
 [profile.bench]
 debug = true
 lto = false
