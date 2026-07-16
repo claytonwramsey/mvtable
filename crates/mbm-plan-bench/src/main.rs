@@ -55,6 +55,13 @@ const DENSITY: f32 = 6000.0;
 /// own smallest collision-sphere radius (`Robot::MIN_RADIUS`).
 const R_FILTER_SCALE: f32 = 4.0;
 
+/// Per-robot `mvtable::Mvt`/`MutableMvt` voxel width, tuned by `mbm_bench`'s per-robot
+/// hyperparameter sweep.
+const PANDA_VOXEL_WIDTH: f32 = 0.1530;
+const UR5_VOXEL_WIDTH: f32 = 0.1864;
+const FETCH_VOXEL_WIDTH: f32 = 0.1409;
+const BAXTER_VOXEL_WIDTH: f32 = 0.1321;
+
 /// Wall-clock cutoff per (backend, problem) solve attempt, so a pathologically slow combination
 /// can't stall the whole unattended run.
 const MAX_SOLVE_TIME: Duration = Duration::from_secs(10);
@@ -137,6 +144,7 @@ fn run_robot<R, const N: usize>(
     joint_names: &[&str; N],
     tf: Isometry3<f32>,
     r_range: (f32, f32),
+    voxel_width: f32,
     resources: &Path,
     datasets: &[&str],
     csv: &mut impl Write,
@@ -194,7 +202,7 @@ where
                 r_range,
                 r_filter,
                 "mvtable",
-                |pc, r_range| PointCloudWorld(Mvt::new(pc, r_range.1)),
+                |pc, _| PointCloudWorld(Mvt::new(pc, voxel_width)),
                 csv,
             )?;
             run_one_backend(
@@ -206,7 +214,7 @@ where
                 r_range,
                 r_filter,
                 "mvtable_mutable",
-                |pc, r_range| PointCloudWorld(MutableMvt::new(pc, r_range.1)),
+                |pc, _| PointCloudWorld(MutableMvt::new(pc, voxel_width)),
                 csv,
             )?;
             run_one_backend(
@@ -242,7 +250,7 @@ where
                 r_range,
                 r_filter,
                 "mvtable_simd",
-                |pc, _| SimdPointCloudWorld(Mvt::new(pc, r_range.1)),
+                |pc, _| SimdPointCloudWorld(Mvt::new(pc, voxel_width)),
                 csv,
             )?;
             run_one_backend(
@@ -254,7 +262,7 @@ where
                 r_range,
                 r_filter,
                 "mvtable_mutable_simd",
-                |pc, _| SimdPointCloudWorld(MutableMvt::new(pc, r_range.1)),
+                |pc, _| SimdPointCloudWorld(MutableMvt::new(pc, voxel_width)),
                 csv,
             )?;
             run_one_backend(
@@ -299,6 +307,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         &Panda::JOINT_NAMES,
         Isometry3::identity(),
         (Panda::MIN_RADIUS, Panda::MAX_RADIUS),
+        PANDA_VOXEL_WIDTH,
         &resources,
         &DATASETS,
         &mut csv,
@@ -312,6 +321,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Vector3::new(0.0, 0.0, -1.57),
         ),
         (Ur5::MIN_RADIUS, Ur5::MAX_RADIUS),
+        UR5_VOXEL_WIDTH,
         &resources,
         &DATASETS,
         &mut csv,
@@ -322,6 +332,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         &Fetch::JOINT_NAMES,
         Isometry3::identity(),
         (Fetch::MIN_RADIUS, Fetch::MAX_RADIUS),
+        FETCH_VOXEL_WIDTH,
         &resources,
         &DATASETS,
         &mut csv,
@@ -332,6 +343,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         &Baxter::JOINT_NAMES,
         Isometry3::identity(),
         (Baxter::MIN_RADIUS, Baxter::MAX_RADIUS),
+        BAXTER_VOXEL_WIDTH,
         &resources,
         &BAXTER_DATASETS,
         &mut csv,

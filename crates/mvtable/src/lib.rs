@@ -18,17 +18,17 @@
 //!
 //! The core data structure in this library is the [`Mvt`], a sparse voxel grid used for
 //! collision checking. [`Mvt`]s are polymorphic over dimension and floating-point type. On
-//! construction, they take in a list of points in a point cloud and the maximum radius that will
-//! be used for querying, which is used to size the grid's voxels.
+//! construction, they take in a list of points in a point cloud and an voxel width used
+//! to size the grid's voxels.
 //!
 //! ```rust
 //! use mvtable::Mvt;
 //!
 //! // list of points in cloud
 //! let points = [[0.0, 1.1], [0.2, 3.1]];
-//! let r_max = 2.0;
+//! let voxel_width = 2.0;
 //!
-//! let mvt = Mvt::<2>::new(&points, r_max);
+//! let mvt = Mvt::<2>::new(&points, voxel_width);
 //! ```
 //!
 //! Once you have an [`Mvt`], you can use it for collision-checking against spheres.
@@ -422,14 +422,13 @@ type FlattenedVoxels<A, I, const K: usize> = (Vec<Voxel<A, I, K>>, Vec<A>);
 /// ```
 /// let points = [[0.0]];
 /// let err = mvtable::Mvt::<1>::try_new(&points, -1.0).unwrap_err();
-/// assert_eq!(err, mvtable::NewMvtError::InvalidRadius);
+/// assert_eq!(err, mvtable::NewMvtError::InvalidVoxelWidth);
 /// ```
 pub enum NewMvtError {
     /// At least one of the points had a non-finite value.
     NonFinite,
-    /// The combined radius (`r_max + r_point`) was not a positive, finite value, so voxels could
-    /// not be sized.
-    InvalidRadius,
+    /// `voxel_width` was not a positive, finite value, so voxels could not be sized.
+    InvalidVoxelWidth,
     /// There were too many voxels or points to be represented without integer overflow.
     TooManyVoxels,
 }
@@ -444,8 +443,8 @@ impl fmt::Display for NewMvtError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::NonFinite => write!(f, "at least one point had a non-finite value"),
-            Self::InvalidRadius => {
-                write!(f, "r_max + r_point was not a positive, finite value")
+            Self::InvalidVoxelWidth => {
+                write!(f, "voxel_width was not a positive, finite value")
             }
             Self::TooManyVoxels => {
                 write!(
@@ -520,13 +519,14 @@ pub struct Mvt<const K: usize, A = f32, I = u32> {
 impl<const K: usize, A: Axis, I: Index> Mvt<K, A, I> {
     /// Construct a new MVT containing all the points in `points`.
     ///
-    /// `r_max` is the maximum radius of the balls that will be queried against the tree; it is
-    /// used to size the grid's voxels.
+    /// `voxel_width` sizes the grid's voxels.
+    /// Good values should be found by benchmarking your own workload, though for point cloud data
+    /// the best sizes tend to be around 10 to 20 cm.
     ///
     /// # Panics
     ///
-    /// This function will panic if any point contains a non-finite value, or if `r_max` is not a
-    /// positive, finite value.
+    /// This function will panic if any point contains a non-finite value, or if `voxel_width` is
+    /// not a positive, finite value.
     ///
     /// # Examples
     ///
@@ -538,8 +538,9 @@ impl<const K: usize, A: Axis, I: Index> Mvt<K, A, I> {
     /// assert!(mvt.collides(&[1.0], 1.5));
     /// assert!(!mvt.collides(&[1.0], 0.5));
     /// ```
-    pub fn new(points: &[[A; K]], r_max: A) -> Self {
-        Self::try_new(points, r_max).expect("failed to construct Mvt; see NewMvtError variants")
+    pub fn new(points: &[[A; K]], voxel_width: A) -> Self {
+        Self::try_new(points, voxel_width)
+            .expect("failed to construct Mvt; see NewMvtError variants")
     }
 
     /// Construct a new MVT containing all the points in `points`, with a point radius `r_point`
@@ -547,8 +548,8 @@ impl<const K: usize, A: Axis, I: Index> Mvt<K, A, I> {
     ///
     /// # Panics
     ///
-    /// This function will panic if any point contains a non-finite value, or if
-    /// `r_max + r_point` is not a positive, finite value.
+    /// This function will panic if any point contains a non-finite value, or if `voxel_width` is
+    /// not a positive, finite value.
     ///
     /// # Examples
     ///
@@ -560,8 +561,8 @@ impl<const K: usize, A: Axis, I: Index> Mvt<K, A, I> {
     /// assert!(mvt.collides(&[1.0], 1.5));
     /// assert!(!mvt.collides(&[1.0], 0.5));
     /// ```
-    pub fn with_point_radius(points: &[[A; K]], r_max: A, r_point: A) -> Self {
-        Self::try_with_point_radius(points, r_max, r_point)
+    pub fn with_point_radius(points: &[[A; K]], voxel_width: A, r_point: A) -> Self {
+        Self::try_with_point_radius(points, voxel_width, r_point)
             .expect("failed to construct Mvt; see NewMvtError variants")
     }
 
@@ -578,8 +579,8 @@ impl<const K: usize, A: Axis, I: Index> Mvt<K, A, I> {
     /// let mvt = mvtable::Mvt::<1>::try_new(&points, f32::INFINITY)?;
     /// # Ok::<(), mvtable::NewMvtError>(())
     /// ```
-    pub fn try_new(points: &[[A; K]], r_max: A) -> Result<Self, NewMvtError> {
-        Self::try_with_point_radius(points, r_max, A::ZERO)
+    pub fn try_new(points: &[[A; K]], voxel_width: A) -> Result<Self, NewMvtError> {
+        Self::try_with_point_radius(points, voxel_width, A::ZERO)
     }
 
     /// Construct a new MVT containing all the points in `points`, with a point radius `r_point`
@@ -598,7 +599,7 @@ impl<const K: usize, A: Axis, I: Index> Mvt<K, A, I> {
     /// ```
     pub fn try_with_point_radius(
         points: &[[A; K]],
-        r_max: A,
+        voxel_width: A,
         r_point: A,
     ) -> Result<Self, NewMvtError> {
         const { assert!(K > 0, "Mvt requires at least one dimension") };
@@ -606,9 +607,8 @@ impl<const K: usize, A: Axis, I: Index> Mvt<K, A, I> {
         if points.iter().any(|p| p.iter().any(|x| !x.is_finite())) {
             return Err(NewMvtError::NonFinite);
         }
-        let cell_wd = r_max + r_point;
-        if cell_wd <= A::ZERO {
-            return Err(NewMvtError::InvalidRadius);
+        if voxel_width <= A::ZERO {
+            return Err(NewMvtError::InvalidVoxelWidth);
         }
 
         let Some(global_aabb) = Aabb::bounding_box(points) else {
@@ -624,7 +624,7 @@ impl<const K: usize, A: Axis, I: Index> Mvt<K, A, I> {
             });
         };
 
-        let (grid_width, grid_width_i, scale) = grid::size_grid(&global_aabb, cell_wd)?;
+        let (grid_width, grid_width_i, scale) = grid::size_grid(&global_aabb, voxel_width)?;
 
         let (tables, voxel_points, voxel_aabbs) =
             Self::build_hierarchy(points, global_aabb.lo, scale, grid_width)?;
@@ -1006,9 +1006,9 @@ mod tests {
     #[test]
     fn point_radius() {
         let points = [[0.0, 0.0], [0.0, 1.0]];
-        let r_max = 1.0;
+        let voxel_width = 1.0;
 
-        let mvt = Mvt::<2>::with_point_radius(&points, r_max, 0.5);
+        let mvt = Mvt::<2>::with_point_radius(&points, voxel_width, 0.5);
         assert!(mvt.collides(&[0.6, 0.0], 0.2));
         assert!(!mvt.collides(&[0.6, 0.0], 0.05));
     }

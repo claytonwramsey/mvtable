@@ -33,6 +33,8 @@ impl<const K: usize> Structure<K> for mvtable::Mvt<K, f32> {
     const NAME: &'static str = "mvtable";
 
     fn build(points: &[[f32; K]], r_range: (f32, f32)) -> Self {
+        // `Mvt::new` takes an explicit voxel width rather than a query-radius range.
+        // Using `r_range.1` is mostly a hack.
         Self::new(points, r_range.1)
     }
 
@@ -265,7 +267,7 @@ pub fn clustered_cloud<R: Rng + ?Sized, const K: usize>(
 ///
 /// Useful for stressing floating-point voxel-boundary edge cases: every point (and many query
 /// centers, if generated at multiples or half-multiples of `pitch`) lands exactly on a cell
-/// boundary of a grid sized with a matching `r_max`.
+/// boundary of a grid sized with a matching `voxel_width`.
 #[must_use]
 pub fn lattice_cloud<const K: usize>(n_per_axis: usize, pitch: f32) -> Vec<[f32; K]> {
     let total = n_per_axis.pow(u32::try_from(K).expect("K should fit in a u32"));

@@ -116,10 +116,10 @@ def plot_solve_time_violins(
         palette=COLORS,
         ax=ax,
         density_norm="width",
-        cut=0,
+        cut=0.0,
         linewidth=0.75,
         log_scale=True,
-        width=1.0,
+        width=0.9,
     )
     ax.set_ylabel("Solve Time (Seconds)")
     ax.set_xlabel("Robot")

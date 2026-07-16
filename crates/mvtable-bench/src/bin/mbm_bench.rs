@@ -1,8 +1,13 @@
 //! Replays point-cloud collision-checking workloads extracted from the MotionBenchMaker
 //! dataset (see `crates/mbm-extract`) against `mvtable`, `capt`, and `kiddo`.
 //!
+//! [`sweep_voxel_width`] tries a schedule of candidate widths against a sample of that robot's own
+//! workloads and picks whichever minimizes scalar query time, and that one selected width is then
+//! used to build every `mvtable`/`mvtable_mutable` instance benchmarked for that robot below.
+//!
 //! Writes `data/mbm_bench_results.csv`, which `scripts/plot_mbm.py` turns into a throughput
-//! figure.
+//! figure, and `data/voxel_width_sweep.csv` (every candidate tried by [`sweep_voxel_width`], per
+//! robot), which `scripts/plot_voxel_width_sweep.py` turns into a tuning-curve figure.
 #![feature(portable_simd)]
 
 use std::{
@@ -41,6 +46,19 @@ const FILTER_NAMES: [&str; 2] = ["centervox", "morton"];
 /// Schedule of filter resolutions (voxel size / minimum separation), each a multiple
 /// of a workload's own smallest queried sphere radius `r_min`.
 const FILTER_RADIUS_SCALES: [f32; 5] = [4.0, 8.0, 16.0, 32.0, 64.0];
+
+/// Number of log-spaced voxel-width candidates tried per robot by [`sweep_voxel_width`].
+const N_SWEEP_CANDIDATES: usize = 40;
+
+/// The (filter, filter-resolution-scale) combo the sweep evaluates candidates against.
+const SWEEP_FILTER: &str = "centervox";
+const SWEEP_SCALE: f32 = 4.0;
+
+/// Number of scalar queries per workload used to evaluate each sweep candidate.
+const SWEEP_QUERIES_PER_WORKLOAD: usize = 2_000;
+
+/// Floor on the low end of [`sweep_voxel_width`]'s candidate schedule.
+const MIN_VOXEL_WIDTH: f32 = 0.01;
 
 #[derive(Clone, Copy)]
 struct Query {
@@ -388,6 +406,128 @@ fn read_workloads(
     Ok(workloads)
 }
 
+/// A workload's point cloud + query trace, loaded from disk once and reused both by the
+/// per-robot voxel-width sweep and the main benchmark loop.
+struct LoadedWorkload {
+    label: String,
+    full_points: Vec<[f32; 3]>,
+    r_min: f32,
+    r_max: f32,
+    scalar_queries: Vec<Query>,
+    simd_batches: Vec<[Query; SIMD_L]>,
+}
+
+/// Load every workload's point cloud and query trace, subsampling the query trace the same way
+/// the main benchmark loop does (same seed derivation), so the sweep and the main loop replay
+/// the exact same queries for a given workload.
+fn load_workloads(
+    raw_dir: &Path,
+    workloads: &[&Workload],
+) -> Result<Vec<LoadedWorkload>, Box<dyn Error>> {
+    workloads
+        .iter()
+        .map(|workload| {
+            let prefix = workload.file_prefix();
+            let full_points = read_points(raw_dir.join(format!("{prefix}_points_full.bin")))?;
+            let raw_queries = read_queries(raw_dir.join(format!("{prefix}_queries.bin")))?;
+            let r_max = raw_queries.iter().fold(0.0f32, |m, q| m.max(q.r));
+            let r_min = raw_queries.iter().fold(f32::INFINITY, |m, q| m.min(q.r));
+
+            let (all_scalar, all_batches) = split_batches::<SIMD_L>(&raw_queries);
+            let seed = prefix
+                .bytes()
+                .fold(0u64, |h, b| h.wrapping_mul(31).wrapping_add(b as u64));
+            let scalar_queries = subsample(all_scalar, MAX_QUERIES, seed);
+            let simd_batches = subsample(all_batches, MAX_SIMD_BATCHES, seed.wrapping_add(1));
+
+            Ok(LoadedWorkload {
+                label: workload.label(),
+                full_points,
+                r_min,
+                r_max,
+                scalar_queries,
+                simd_batches,
+            })
+        })
+        .collect()
+}
+
+/// Sweep a log-spaced schedule of [`SWEEP_CANDIDATES`] voxel-width candidates for one robot, plus
+/// `r_max` itself.
+fn sweep_voxel_width(
+    robot: &str,
+    workloads: &[LoadedWorkload],
+    sweep_out: &mut impl Write,
+) -> Result<f32, Box<dyn Error>> {
+    let r_min_global = workloads.iter().fold(f32::INFINITY, |m, w| m.min(w.r_min));
+    let r_max_global = workloads.iter().fold(0.0f32, |m, w| m.max(w.r_max));
+
+    let lo = (r_min_global * 0.25).max(MIN_VOXEL_WIDTH).ln();
+    let hi = (r_max_global * 4.0).ln();
+
+    println!(
+        "=== {robot}: sweeping voxel width over {N_SWEEP_CANDIDATES} candidates in \
+         [{:.5}, {:.5}] (from observed query radii [{r_min_global:.5}, {r_max_global:.5}]) ===",
+        lo.exp(),
+        hi.exp()
+    );
+
+    let candidates: Vec<(f32, bool)> = (0..N_SWEEP_CANDIDATES)
+        .map(|i| {
+            #[expect(
+                clippy::cast_precision_loss,
+                reason = "SWEEP_CANDIDATES is tiny relative to f32's mantissa"
+            )]
+            let t = i as f32 / (N_SWEEP_CANDIDATES - 1) as f32;
+            ((lo + (hi - lo) * t).exp(), false)
+        })
+        .chain(std::iter::once((r_max_global, true)))
+        .collect();
+
+    let mut best_width = r_max_global;
+    let mut best_mean_ns = f64::INFINITY;
+
+    for (width, is_r_max) in candidates {
+        let mut total_ns = 0.0f64;
+        let mut total_queries = 0usize;
+        for w in workloads {
+            let points = apply_filter(SWEEP_FILTER, &w.full_points, SWEEP_SCALE * w.r_min);
+            if points.is_empty() {
+                continue;
+            }
+            let sample_len = w.scalar_queries.len().min(SWEEP_QUERIES_PER_WORKLOAD);
+            if sample_len == 0 {
+                continue;
+            }
+            let sample: Vec<&Query> = w.scalar_queries[..sample_len].iter().collect();
+
+            let mvt = mvtable::Mvt::<3, f32>::new(&points, width);
+            total_ns += time_queries(&mvt, &sample).as_secs_f64() * 1e9;
+            total_queries += sample_len;
+        }
+        if total_queries == 0 {
+            continue;
+        }
+        let mean_ns = total_ns / total_queries as f64;
+        let tag = if is_r_max { " (r_max)" } else { "" };
+        println!("  candidate voxel_width={width:.5}{tag}: mean {mean_ns:.2} ns/query");
+        writeln!(
+            sweep_out,
+            "{robot},{width},{mean_ns},{}",
+            u8::from(is_r_max)
+        )?;
+        if mean_ns < best_mean_ns {
+            best_mean_ns = mean_ns;
+            best_width = width;
+        }
+    }
+
+    println!(
+        "=== {robot}: selected voxel_width={best_width:.5} (mean {best_mean_ns:.2} ns/query) ==="
+    );
+    Ok(best_width)
+}
+
 fn main() -> Result<(), Box<dyn Error>> {
     let data_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../data");
     let raw_dir = data_dir.join("raw");
@@ -403,198 +543,209 @@ fn main() -> Result<(), Box<dyn Error>> {
         "structure,dataset,filter,n_points,n_queries,metric,lanes,ns_per_op"
     )?;
 
-    for workload in &workloads {
-        let prefix = workload.file_prefix();
-        let label = workload.label();
-        let full_points = read_points(raw_dir.join(format!("{prefix}_points_full.bin")))?;
-        let raw_queries = read_queries(raw_dir.join(format!("{prefix}_queries.bin")))?;
-        let r_max = raw_queries.iter().fold(0.0f32, |m, q| m.max(q.r));
-        let r_min = raw_queries.iter().fold(f32::INFINITY, |m, q| m.min(q.r));
-        let r_range = (r_min, r_max);
+    // Per-candidate voxel-width sweep results
+    let sweep_path = data_dir.join("voxel_width_sweep.csv");
+    let mut sweep_out = BufWriter::new(File::create(&sweep_path)?);
+    writeln!(sweep_out, "robot,voxel_width,ns_per_query,is_r_max")?;
 
-        // Regroup the flat, temporally-ordered trace back into the two kinds of queries the
-        // planner actually issued before subsampling.
-        let (all_scalar, all_batches) = split_batches::<SIMD_L>(&raw_queries);
+    // Group workloads by robot, preserving first-appearance order, so `mvtable`'s voxel width can
+    // be swept and selected once per robot
+    let mut robot_order: Vec<String> = Vec::new();
+    let mut by_robot: HashMap<&str, Vec<&Workload>> = HashMap::new();
+    for w in &workloads {
+        if !by_robot.contains_key(w.robot.as_str()) {
+            robot_order.push(w.robot.clone());
+        }
+        by_robot.entry(&w.robot).or_default().push(w);
+    }
 
-        // Subsampled once per workload (not per filter/radius), so every (filter, radius)
-        // combination below is compared on the exact same query set.
-        let seed = prefix
-            .bytes()
-            .fold(0u64, |h, b| h.wrapping_mul(31).wrapping_add(b as u64));
-        let scalar_queries = subsample(all_scalar, MAX_QUERIES, seed);
-        let simd_batches = subsample(all_batches, MAX_SIMD_BATCHES, seed.wrapping_add(1));
+    for robot in &robot_order {
+        let loaded = load_workloads(&raw_dir, &by_robot[robot.as_str()])?;
+        let voxel_width = sweep_voxel_width(robot, &loaded, &mut sweep_out)?;
 
-        for &filter_name in &FILTER_NAMES {
-            for &scale in &FILTER_RADIUS_SCALES {
-                // Points closer together than the robot's smallest queried sphere add no useful
-                // collision-checking resolution, so that's a natural, workload-specific base
-                // filter strength; the exponential schedule sweeps around it.
-                let points = apply_filter(filter_name, &full_points, scale * r_min);
-                let n_points = points.len();
-                if n_points == 0 {
-                    continue;
-                }
+        for w in &loaded {
+            let label = &w.label;
+            let full_points = &w.full_points;
+            let r_min = w.r_min;
+            let r_max = w.r_max;
+            let r_range = (r_min, r_max);
+            let scalar_queries = &w.scalar_queries;
+            let simd_batches = &w.simd_batches;
 
-                // Ground-truth colliding/non-colliding partition for this point cloud, computed
-                // with `mvtable` itself. A batch counts as "colliding" if any of its lanes does,
-                // mirroring `collides_simd`'s any-of-batch semantics.
-                let oracle = mvtable::Mvt::<3, f32>::new(&points, r_max);
-                let (colliding, non_colliding) = partition_indices(&scalar_queries, |q| {
-                    Structure::collides(&oracle, &q.center, q.r)
-                });
-                let (batch_colliding, batch_non_colliding) =
-                    partition_indices(&simd_batches, |batch| {
-                        batch
-                            .iter()
-                            .any(|q| Structure::collides(&oracle, &q.center, q.r))
+            for &filter_name in &FILTER_NAMES {
+                for &scale in &FILTER_RADIUS_SCALES {
+                    let points = apply_filter(filter_name, full_points, scale * r_min);
+                    let n_points = points.len();
+                    if n_points == 0 {
+                        continue;
+                    }
+
+                    // Ground-truth colliding/non-colliding partition for this point cloud,
+                    // computed with `mvtable` itself. A batch counts as "colliding" if any of its
+                    // lanes does, mirroring `collides_simd`'s any-of-batch semantics.
+                    let oracle = mvtable::Mvt::<3, f32>::new(&points, voxel_width);
+                    let (colliding, non_colliding) = partition_indices(scalar_queries, |q| {
+                        Structure::collides(&oracle, &q.center, q.r)
                     });
+                    let (batch_colliding, batch_non_colliding) =
+                        partition_indices(simd_batches, |batch| {
+                            batch
+                                .iter()
+                                .any(|q| Structure::collides(&oracle, &q.center, q.r))
+                        });
 
-                println!(
-                    "{label} [{filter_name} x{scale}] @ {n_points} points (from \
-                     {}): {} scalar queries ({} colliding, {} non-colliding), {} SIMD batches \
-                     ({} colliding, {} non-colliding)",
-                    full_points.len(),
-                    scalar_queries.len(),
-                    colliding.len(),
-                    non_colliding.len(),
-                    simd_batches.len(),
-                    batch_colliding.len(),
-                    batch_non_colliding.len(),
-                );
+                    println!(
+                        "{label} [{filter_name} x{scale}] @ {n_points} points (from \
+                         {}): {} scalar queries ({} colliding, {} non-colliding), {} SIMD \
+                         batches ({} colliding, {} non-colliding)",
+                        full_points.len(),
+                        scalar_queries.len(),
+                        colliding.len(),
+                        non_colliding.len(),
+                        simd_batches.len(),
+                        batch_colliding.len(),
+                        batch_non_colliding.len(),
+                    );
 
-                let n_queries = scalar_queries.len() + simd_batches.len() * SIMD_L;
+                    let n_queries = scalar_queries.len() + simd_batches.len() * SIMD_L;
 
-                // `mvtable`: one instance, reused for scalar and SIMD queries (construction
-                // doesn't depend on the SIMD lane width, unlike `capt`).
-                let ctx = RowContext {
-                    structure: "mvtable",
-                    workload: &label,
-                    filter_name,
-                    n_points,
-                };
-                let tic = Instant::now();
-                let mvt = mvtable::Mvt::<3, f32>::new(&points, r_max);
-                write_construction_row(
-                    &mut out,
-                    ctx,
-                    n_queries,
-                    tic.elapsed().as_secs_f64() * 1e9,
-                )?;
-                write_memory_row(&mut out, ctx, mvt.memory_used())?;
-                bench_scalar(
-                    &mut out,
-                    ctx,
-                    &mvt,
-                    &scalar_queries,
-                    &colliding,
-                    &non_colliding,
-                )?;
-                if !simd_batches.is_empty() {
-                    bench_simd(
+                    // `mvtable`: one instance, reused for scalar and SIMD queries (construction
+                    // doesn't depend on the SIMD lane width, unlike `capt`). Built with this
+                    // robot's swept, selected `voxel_width` rather than a query-radius-derived
+                    // value.
+                    let ctx = RowContext {
+                        structure: "mvtable",
+                        workload: label,
+                        filter_name,
+                        n_points,
+                    };
+                    let tic = Instant::now();
+                    let mvt = mvtable::Mvt::<3, f32>::new(&points, voxel_width);
+                    write_construction_row(
+                        &mut out,
+                        ctx,
+                        n_queries,
+                        tic.elapsed().as_secs_f64() * 1e9,
+                    )?;
+                    write_memory_row(&mut out, ctx, mvt.memory_used())?;
+                    bench_scalar(
                         &mut out,
                         ctx,
                         &mvt,
-                        &simd_batches,
-                        &batch_colliding,
-                        &batch_non_colliding,
+                        scalar_queries,
+                        &colliding,
+                        &non_colliding,
                     )?;
-                }
+                    if !simd_batches.is_empty() {
+                        bench_simd(
+                            &mut out,
+                            ctx,
+                            &mvt,
+                            simd_batches,
+                            &batch_colliding,
+                            &batch_non_colliding,
+                        )?;
+                    }
 
-                let ctx = RowContext {
-                    structure: "mvtable_mutable",
-                    ..ctx
-                };
-                let tic = Instant::now();
-                let mvt_mutable = mvtable::MutableMvt::<3, f32>::new(&points, r_max);
-                write_construction_row(
-                    &mut out,
-                    ctx,
-                    n_queries,
-                    tic.elapsed().as_secs_f64() * 1e9,
-                )?;
-                write_memory_row(&mut out, ctx, mvt_mutable.memory_used())?;
-                bench_scalar(
-                    &mut out,
-                    ctx,
-                    &mvt_mutable,
-                    &scalar_queries,
-                    &colliding,
-                    &non_colliding,
-                )?;
-                if !simd_batches.is_empty() {
-                    bench_simd(
+                    let ctx = RowContext {
+                        structure: "mvtable_mutable",
+                        ..ctx
+                    };
+                    let tic = Instant::now();
+                    let mvt_mutable = mvtable::MutableMvt::<3, f32>::new(&points, voxel_width);
+                    write_construction_row(
+                        &mut out,
+                        ctx,
+                        n_queries,
+                        tic.elapsed().as_secs_f64() * 1e9,
+                    )?;
+                    write_memory_row(&mut out, ctx, mvt_mutable.memory_used())?;
+                    bench_scalar(
                         &mut out,
                         ctx,
                         &mvt_mutable,
-                        &simd_batches,
-                        &batch_colliding,
-                        &batch_non_colliding,
+                        scalar_queries,
+                        &colliding,
+                        &non_colliding,
                     )?;
-                }
+                    if !simd_batches.is_empty() {
+                        bench_simd(
+                            &mut out,
+                            ctx,
+                            &mvt_mutable,
+                            simd_batches,
+                            &batch_colliding,
+                            &batch_non_colliding,
+                        )?;
+                    }
 
-                // `capt`: built once at `SIMD_L` lanes (rather than once at 1 lane for scalar and
-                // again at `SIMD_L` lanes for SIMD), reused for both benchmarks below.
-                let ctx = RowContext {
-                    structure: "capt",
-                    ..ctx
-                };
-                let tic = Instant::now();
-                let capt = capt::Capt::<3, f32, u32>::new(&points, r_range, SIMD_L);
-                write_construction_row(
-                    &mut out,
-                    ctx,
-                    n_queries,
-                    tic.elapsed().as_secs_f64() * 1e9,
-                )?;
-                write_memory_row(&mut out, ctx, capt.memory_used())?;
-                bench_scalar(
-                    &mut out,
-                    ctx,
-                    &capt,
-                    &scalar_queries,
-                    &colliding,
-                    &non_colliding,
-                )?;
-                if !simd_batches.is_empty() {
-                    bench_simd(
+                    // `capt`: built once at `SIMD_L` lanes (rather than once at 1 lane for
+                    // scalar and again at `SIMD_L` lanes for SIMD), reused for both benchmarks
+                    // below.
+                    let ctx = RowContext {
+                        structure: "capt",
+                        ..ctx
+                    };
+                    let tic = Instant::now();
+                    let capt = capt::Capt::<3, f32, u32>::new(&points, r_range, SIMD_L);
+                    write_construction_row(
+                        &mut out,
+                        ctx,
+                        n_queries,
+                        tic.elapsed().as_secs_f64() * 1e9,
+                    )?;
+                    write_memory_row(&mut out, ctx, capt.memory_used())?;
+                    bench_scalar(
                         &mut out,
                         ctx,
                         &capt,
-                        &simd_batches,
-                        &batch_colliding,
-                        &batch_non_colliding,
+                        scalar_queries,
+                        &colliding,
+                        &non_colliding,
                     )?;
+                    if !simd_batches.is_empty() {
+                        bench_simd(
+                            &mut out,
+                            ctx,
+                            &capt,
+                            simd_batches,
+                            &batch_colliding,
+                            &batch_non_colliding,
+                        )?;
+                    }
+
+                    // `kiddo`: scalar only, no SIMD-batched query API.
+                    let ctx = RowContext {
+                        structure: "kiddo",
+                        ..ctx
+                    };
+                    let tic = Instant::now();
+                    let kdt = kiddo::ImmutableKdTree::<f32, 3>::new_from_slice(&points);
+                    write_construction_row(
+                        &mut out,
+                        ctx,
+                        n_queries,
+                        tic.elapsed().as_secs_f64() * 1e9,
+                    )?;
+                    write_memory_row(&mut out, ctx, mvtable_bench::kiddo_memory_used(&kdt))?;
+                    bench_scalar(
+                        &mut out,
+                        ctx,
+                        &kdt,
+                        scalar_queries,
+                        &colliding,
+                        &non_colliding,
+                    )?;
+
+                    out.flush()?;
                 }
-
-                // `kiddo`: scalar only, no SIMD-batched query API.
-                let ctx = RowContext {
-                    structure: "kiddo",
-                    ..ctx
-                };
-                let tic = Instant::now();
-                let kdt = kiddo::ImmutableKdTree::<f32, 3>::new_from_slice(&points);
-                write_construction_row(
-                    &mut out,
-                    ctx,
-                    n_queries,
-                    tic.elapsed().as_secs_f64() * 1e9,
-                )?;
-                write_memory_row(&mut out, ctx, mvtable_bench::kiddo_memory_used(&kdt))?;
-                bench_scalar(
-                    &mut out,
-                    ctx,
-                    &kdt,
-                    &scalar_queries,
-                    &colliding,
-                    &non_colliding,
-                )?;
-
-                out.flush()?;
             }
         }
     }
 
+    sweep_out.flush()?;
     println!("wrote {}", out_path.display());
+    println!("wrote {}", sweep_path.display());
 
     Ok(())
 }

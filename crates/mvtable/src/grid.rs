@@ -14,9 +14,9 @@ pub struct TooManyVoxels;
 /// coordinate scale factor used to map a point into grid indices.
 pub type GridSizing<A, I, const K: usize> = ([usize; K], [I; K], [A; K]);
 
-/// Given a bounding box over a point cloud and the combined query-plus-point radius `cell_wd`,
-/// compute the per-axis grid width (in both `usize` and `I` form) and the coordinate scale factor
-/// used to map a point into grid indices.
+/// Given a bounding box over a point cloud and a voxel width `cell_wd`, compute the per-axis grid
+/// width (in both `usize` and `I` form) and the coordinate scale factor used to map a point into
+/// grid indices.
 pub fn size_grid<A: Axis, I: Index, const K: usize>(
     aabb: &Aabb<A, K>,
     cell_wd: A,

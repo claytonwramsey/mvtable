@@ -1,15 +1,4 @@
-"""Shared helpers for the `mbm_bench` result-plotting scripts.
-
-`mbm_bench.rs` computes `ns_per_op` for a `(structure, dataset, filter, n_points, metric, lanes)`
-row as `elapsed_ns / trace.len()`, i.e. an average over however many queries happened to land in
-that trace. For the `colliding` trace specifically, that count can be tiny: a heavily-filtered or
-naturally collision-sparse scene may have only a handful of colliding queries in its 10,000-query
-sample (roughly a third of `colliding` rows have fewer than 30). Averaging over a handful of
-queries lets a single noisy one dominate the whole row.
-That single row is enough to distort a shared y-axis extent computed from raw
-min/max across a whole figure. Filtering out rows whose
-`n_queries` is too small to average out that kind of noise avoids treating it as a real result.
-"""
+"""Shared helpers for the `mbm_bench` result-plotting scripts."""
 
 import pathlib
 
@@ -49,7 +38,7 @@ def save_figure(fig, out: pathlib.Path, crop: bool = False) -> None:
         save_kwargs["bbox_inches"] = "tight"
         save_kwargs["pad_inches"] = 0
     fig.savefig(out, **save_kwargs)
-    # fig.savefig(out.with_suffix(".png"), dpi=150)
+    fig.savefig(out.with_suffix(".png"), dpi=150)
     print(f"wrote {out}")
     print(f"wrote {out.with_suffix('.png')}")
 

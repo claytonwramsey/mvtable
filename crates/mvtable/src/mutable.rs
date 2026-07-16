@@ -21,14 +21,13 @@ use crate::{AxisSimd, AxisSimdElement};
 /// ```
 /// let points = [[0.0]];
 /// let err = mvtable::MutableMvt::<1>::try_new(&points, -1.0).unwrap_err();
-/// assert_eq!(err, mvtable::NewMutableMvtError::InvalidRadius);
+/// assert_eq!(err, mvtable::NewMutableMvtError::InvalidVoxelWidth);
 /// ```
 pub enum NewMutableMvtError {
     /// At least one of the points had a non-finite value.
     NonFinite,
-    /// The combined radius (`r_max + r_point`) was not a positive, finite value, so voxels could
-    /// not be sized.
-    InvalidRadius,
+    /// `voxel_width` was not a positive, finite value, so voxels could not be sized.
+    InvalidVoxelWidth,
     /// There were too many voxels or points to be represented without integer overflow.
     TooManyVoxels,
     /// [`MutableMvt::try_with_workspace`] was called with `lo[k] > hi[k]` for some axis `k`, so
@@ -51,8 +50,8 @@ impl fmt::Display for NewMutableMvtError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::NonFinite => write!(f, "at least one point had a non-finite value"),
-            Self::InvalidRadius => {
-                write!(f, "r_max + r_point was not a positive, finite value")
+            Self::InvalidVoxelWidth => {
+                write!(f, "voxel_width was not a positive, finite value")
             }
             Self::TooManyVoxels => {
                 write!(
@@ -210,14 +209,14 @@ pub struct MutableMvt<const K: usize, A = f32, I = u32> {
 impl<const K: usize, A: Axis, I: Index> MutableMvt<K, A, I> {
     /// Construct a new `MutableMvt` containing all the points in `points`.
     ///
-    /// `r_max` is the maximum radius of the balls that will be queried against the tree; it is
-    /// used to size the grid's voxels.
+    /// `voxel_width` sizes the grid's voxels.
+    /// Good values for `voxel_width` are best found by benchmarking your own workload.
     ///
     /// # Panics
     ///
     /// This function will panic if `points` is empty, if any point contains a non-finite value,
-    /// or if `r_max` is not a positive, finite value. To construct an empty `MutableMvt`, use
-    /// [`Self::with_workspace`] instead.
+    /// or if `voxel_width` is not a positive, finite value. To construct an empty `MutableMvt`,
+    /// use [`Self::with_workspace`] instead.
     ///
     /// # Examples
     ///
@@ -227,8 +226,8 @@ impl<const K: usize, A: Axis, I: Index> MutableMvt<K, A, I> {
     /// assert!(mvt.collides(&[1.0], 1.5));
     /// ```
     #[must_use]
-    pub fn new(points: &[[A; K]], r_max: A) -> Self {
-        Self::try_new(points, r_max)
+    pub fn new(points: &[[A; K]], voxel_width: A) -> Self {
+        Self::try_new(points, voxel_width)
             .expect("failed to construct MutableMvt; see NewMutableMvtError variants")
     }
 
@@ -238,8 +237,8 @@ impl<const K: usize, A: Axis, I: Index> MutableMvt<K, A, I> {
     /// # Panics
     ///
     /// This function will panic if `points` is empty, if any point contains a non-finite value,
-    /// or if `r_max + r_point` is not a positive, finite value. To construct an empty
-    /// `MutableMvt`, use [`Self::with_workspace`] instead.
+    /// or if `voxel_width` is not a positive, finite value. To construct an empty `MutableMvt`,
+    /// use [`Self::with_workspace`] instead.
     ///
     /// # Examples
     ///
@@ -249,8 +248,8 @@ impl<const K: usize, A: Axis, I: Index> MutableMvt<K, A, I> {
     /// assert!(mvt.collides(&[1.0], 1.5));
     /// ```
     #[must_use]
-    pub fn with_point_radius(points: &[[A; K]], r_max: A, r_point: A) -> Self {
-        Self::try_with_point_radius(points, r_max, r_point)
+    pub fn with_point_radius(points: &[[A; K]], voxel_width: A, r_point: A) -> Self {
+        Self::try_with_point_radius(points, voxel_width, r_point)
             .expect("failed to construct MutableMvt; see NewMutableMvtError variants")
     }
 
@@ -268,8 +267,8 @@ impl<const K: usize, A: Axis, I: Index> MutableMvt<K, A, I> {
     /// let mvt = mvtable::MutableMvt::<1>::try_new(&points, f32::INFINITY)?;
     /// # Ok::<(), mvtable::NewMutableMvtError>(())
     /// ```
-    pub fn try_new(points: &[[A; K]], r_max: A) -> Result<Self, NewMutableMvtError> {
-        Self::try_with_point_radius(points, r_max, A::ZERO)
+    pub fn try_new(points: &[[A; K]], voxel_width: A) -> Result<Self, NewMutableMvtError> {
+        Self::try_with_point_radius(points, voxel_width, A::ZERO)
     }
 
     /// Construct a new `MutableMvt` containing all the points in `points`, with a point radius
@@ -288,7 +287,7 @@ impl<const K: usize, A: Axis, I: Index> MutableMvt<K, A, I> {
     /// ```
     pub fn try_with_point_radius(
         points: &[[A; K]],
-        r_max: A,
+        voxel_width: A,
         r_point: A,
     ) -> Result<Self, NewMutableMvtError> {
         const { assert!(K > 0, "MutableMvt requires at least one dimension") };
@@ -296,9 +295,8 @@ impl<const K: usize, A: Axis, I: Index> MutableMvt<K, A, I> {
         if points.iter().any(|p| p.iter().any(|x| !x.is_finite())) {
             return Err(NewMutableMvtError::NonFinite);
         }
-        let cell_wd = r_max + r_point;
-        if cell_wd <= A::ZERO {
-            return Err(NewMutableMvtError::InvalidRadius);
+        if voxel_width <= A::ZERO {
+            return Err(NewMutableMvtError::InvalidVoxelWidth);
         }
 
         // an empty point cloud has no bounding box to size the grid from; construct with
@@ -307,7 +305,8 @@ impl<const K: usize, A: Axis, I: Index> MutableMvt<K, A, I> {
             return Err(NewMutableMvtError::EmptyPointCloud);
         };
 
-        let mut this = Self::try_with_workspace(bounding_box.lo, bounding_box.hi, r_max, r_point)?;
+        let mut this =
+            Self::try_with_workspace(bounding_box.lo, bounding_box.hi, voxel_width, r_point)?;
         // every point was already checked finite above, and the grid is already established, so
         // `insert_initialized` is sufficient and cannot fail except via `TooManyVoxels`.
         for p in points {
@@ -320,16 +319,12 @@ impl<const K: usize, A: Axis, I: Index> MutableMvt<K, A, I> {
     /// axis-aligned box from `lo` to `hi`, rather than being inferred from a point cloud, with a
     /// point radius `r_point` added to every query.
     ///
-    /// `r_max` is the maximum radius of the balls that will be queried against the tree; it is
-    /// used, together with `r_point`, to size the grid's voxels, exactly as in
-    /// [`Self::with_point_radius`]. Unlike [`Self::new`]/[`Self::with_point_radius`], which infer
-    /// workspace bounds from a non-empty point cloud, this sets them explicitly, so it can
-    /// construct an empty `MutableMvt` that can be called on immediately.
+    /// `voxel_width` sizes the grid's voxels, exactly as in [`Self::with_point_radius`].
     ///
     /// # Panics
     ///
     /// This function will panic if any component of `lo` or `hi` is non-finite, if `lo[k] >
-    /// hi[k]` for any axis `k`, or if `r_max + r_point` is not a positive, finite value.
+    /// hi[k]` for any axis `k`, or if `voxel_width` is not a positive, finite value.
     ///
     /// # Examples
     ///
@@ -340,8 +335,8 @@ impl<const K: usize, A: Axis, I: Index> MutableMvt<K, A, I> {
     /// # Ok::<(), mvtable::InsertError>(())
     /// ```
     #[must_use]
-    pub fn with_workspace(lo: [A; K], hi: [A; K], r_max: A, r_point: A) -> Self {
-        Self::try_with_workspace(lo, hi, r_max, r_point)
+    pub fn with_workspace(lo: [A; K], hi: [A; K], voxel_width: A, r_point: A) -> Self {
+        Self::try_with_workspace(lo, hi, voxel_width, r_point)
             .expect("failed to construct MutableMvt; see NewMutableMvtError variants")
     }
 
@@ -361,7 +356,7 @@ impl<const K: usize, A: Axis, I: Index> MutableMvt<K, A, I> {
     pub fn try_with_workspace(
         lo: [A; K],
         hi: [A; K],
-        r_max: A,
+        voxel_width: A,
         r_point: A,
     ) -> Result<Self, NewMutableMvtError> {
         const { assert!(K > 0, "MutableMvt requires at least one dimension") };
@@ -372,13 +367,12 @@ impl<const K: usize, A: Axis, I: Index> MutableMvt<K, A, I> {
         if (0..K).any(|k| lo[k] > hi[k]) {
             return Err(NewMutableMvtError::InvalidWorkspace);
         }
-        let cell_wd = r_max + r_point;
-        if cell_wd <= A::ZERO {
-            return Err(NewMutableMvtError::InvalidRadius);
+        if voxel_width <= A::ZERO {
+            return Err(NewMutableMvtError::InvalidVoxelWidth);
         }
 
         let bounding_box = Aabb { lo, hi };
-        let (grid_width, grid_width_i, scale) = grid::size_grid(&bounding_box, cell_wd)?;
+        let (grid_width, grid_width_i, scale) = grid::size_grid(&bounding_box, voxel_width)?;
         Ok(Self {
             grid_width: grid_width_i,
             scale,
@@ -758,9 +752,9 @@ mod tests {
     #[test]
     fn point_radius() {
         let points = [[0.0, 0.0], [0.0, 1.0]];
-        let r_max = 1.0;
+        let voxel_width = 1.0;
 
-        let mvt = MutableMvt::<2>::with_point_radius(&points, r_max, 0.5);
+        let mvt = MutableMvt::<2>::with_point_radius(&points, voxel_width, 0.5);
         assert!(mvt.collides(&[0.6, 0.0], 0.2));
         assert!(!mvt.collides(&[0.6, 0.0], 0.05));
     }
@@ -1125,15 +1119,13 @@ mod tests {
     fn with_workspace_rejects_invalid_radius() {
         let err =
             MutableMvt::<2>::try_with_workspace([0.0, 0.0], [1.0, 1.0], -1.0, 0.0).unwrap_err();
-        assert_eq!(err, NewMutableMvtError::InvalidRadius);
+        assert_eq!(err, NewMutableMvtError::InvalidVoxelWidth);
     }
 
     #[test]
-    fn with_workspace_rejects_invalid_radius_from_point_radius_padding() {
-        // r_max alone is positive, but r_max + r_point is not, so this must still error.
-        let err =
-            MutableMvt::<2>::try_with_workspace([0.0, 0.0], [1.0, 1.0], 1.0, -2.0).unwrap_err();
-        assert_eq!(err, NewMutableMvtError::InvalidRadius);
+    fn with_workspace_voxel_width_independent_of_point_radius() {
+        let mvt = MutableMvt::<2>::try_with_workspace([0.0, 0.0], [1.0, 1.0], 1.0, -2.0).unwrap();
+        assert!(mvt.points().next().is_none());
     }
 
     #[test]
