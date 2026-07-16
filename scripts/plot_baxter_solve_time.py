@@ -18,7 +18,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
-from mbm_common import lighten, save_figure
+from mbm_common import lighten, save_figure, trim_spines_to_data, wrap_tick_label
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 RESULTS = ROOT / "data" / "mbm_plan_results.csv"
@@ -85,12 +85,14 @@ def main() -> None:
     df = pd.read_csv(RESULTS)
     df = df[df.structure.isin(args.structures)]
     df = df[(df.robot == "baxter") & df.solved]
+    df = df.copy()
+    df["time_ms"] = df.time_secs * 1000
 
     fig, ax = plt.subplots(figsize=(6, 4.5))
     sns.violinplot(
         data=df,
         x="structure",
-        y="time_secs",
+        y="time_ms",
         hue="structure",
         order=args.structures,
         palette=COLORS,
@@ -102,15 +104,15 @@ def main() -> None:
         width=0.9,
         legend=False,
     )
-    ax.set_ylabel("Solve Time (Seconds)")
+    ax.set_ylabel("Solve Time (Milliseconds)")
     ax.set_xlabel("")
     ax.set_xticks(
         range(len(args.structures)),
-        [LABELS[name] for name in args.structures],
-        rotation=30,
-        ha="right",
+        [wrap_tick_label(LABELS[name]) for name in args.structures],
     )
-    sns.despine(ax=ax)
+    ax.tick_params(axis="x", bottom=False, pad=2)
+    sns.despine(ax=ax, bottom=True)
+    trim_spines_to_data(ax)
     fig.tight_layout()
     save_figure(fig, args.out, crop=True)
 

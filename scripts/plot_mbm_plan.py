@@ -19,7 +19,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
-from mbm_common import lighten, save_figure
+from mbm_common import ROBOT_LABELS, lighten, save_figure, trim_spines_to_data
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 RESULTS = ROOT / "data" / "mbm_plan_results.csv"
@@ -121,8 +121,10 @@ def plot_solve_time_violins(
         log_scale=True,
         width=0.9,
     )
-    ax.set_ylabel("Solve Time (Seconds)")
-    ax.set_xlabel("Robot")
+    ax.set_ylabel("Solve Time (Milliseconds)")
+    ax.set_xlabel("")
+    ax.set_xticks(range(len(robots)), [ROBOT_LABELS[r] for r in robots])
+    ax.tick_params(axis="x", bottom=False, pad=2)
     handles, labels = ax.get_legend_handles_labels()
     ax.legend(
         [], [], frameon=False
@@ -134,12 +136,13 @@ def main() -> None:
     args = parse_args()
     df = pd.read_csv(RESULTS)
     df = df[df.structure.isin(args.structures)]
+    df = df.copy()
 
-    time_col = "time_secs"
+    time_col = "time_ms"
+    df["time_ms"] = df.time_secs * 1000
     if args.include_construction:
-        df = df.copy()
-        df["total_secs"] = df.time_secs + df.construction_secs
-        time_col = "total_secs"
+        df["total_ms"] = (df.time_secs + df.construction_secs) * 1000
+        time_col = "total_ms"
 
     fig, ax_time = plt.subplots(figsize=(12, 6))
 
@@ -154,7 +157,8 @@ def main() -> None:
         bbox_to_anchor=(0.5, 0.0),
     )
 
-    sns.despine(ax=ax_time)
+    sns.despine(ax=ax_time, bottom=True)
+    trim_spines_to_data(ax_time)
 
     if args.titles:
         fig.suptitle("Solve Time by Collision Checking Backend")

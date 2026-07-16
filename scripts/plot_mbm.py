@@ -34,6 +34,7 @@ from mbm_common import (
     drop_unreliable_query_rows,
     lighten,
     save_figure,
+    trim_spines_to_data,
 )
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -206,6 +207,7 @@ def finish_single_panel(ax, xlabel: str) -> None:
     ax.set_yscale("log")
     ax.set_xlabel(xlabel)
     sns.despine(ax=ax)
+    trim_spines_to_data(ax)
 
 
 def legend_order(handles, labels, pin_first: str | None = None):

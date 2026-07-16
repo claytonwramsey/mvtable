@@ -13,7 +13,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
-from mbm_common import save_figure
+from mbm_common import ROBOT_LABELS, save_figure, trim_spines_to_data
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 RESULTS = ROOT / "data" / "voxel_width_sweep.csv"
@@ -33,10 +33,11 @@ def main() -> None:
     df = pd.read_csv(RESULTS)
     df = df[df.ns_per_query > 0]
 
-    fig, ax = plt.subplots(figsize=(7, 5.5))
+    fig, ax = plt.subplots(figsize=(5, 4.5))
 
     for robot, sub in df.groupby("robot"):
         color = ROBOT_COLORS.get(robot, "#000000")
+        label = ROBOT_LABELS.get(robot, robot)
         swept = sub[sub.is_r_max == 0].sort_values("voxel_width")
         r_max_row = sub[sub.is_r_max == 1]
 
@@ -45,7 +46,7 @@ def main() -> None:
             swept.ns_per_query,
             color=color,
             linewidth=2,
-            label=robot,
+            label=label,
         )
         if not r_max_row.empty:
             ax.scatter(
@@ -57,7 +58,7 @@ def main() -> None:
                 edgecolor="white",
                 linewidth=1.0,
                 zorder=5,
-                label=f"{robot} (r_max)",
+                label=f"{label} (r_max)",
             )
 
     ax.set_xscale("log")
@@ -73,11 +74,12 @@ def main() -> None:
     line_labels = [l for l in labels if not l.endswith("(r_max)")]
     ax.legend(
         [*line_handles, r_max_handle],
-        [*line_labels, "r_max (naive choice)"],
+        [*line_labels, "r_max"],
         frameon=False,
     )
 
     sns.despine(ax=ax)
+    trim_spines_to_data(ax)
     fig.tight_layout()
     save_figure(fig, OUT)
 

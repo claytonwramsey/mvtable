@@ -5,7 +5,37 @@ import pathlib
 import numpy as np
 import pandas as pd
 from matplotlib import patheffects
+from matplotlib.category import StrCategoryLocator
 from matplotlib.colors import LinearSegmentedColormap, to_rgb
+from matplotlib.ticker import FixedLocator, FuncFormatter
+
+# Locator types that mean "this axis has category positions, not numeric ones": `FixedLocator`
+# from an explicit `ax.set_xticks(positions, labels)` call (e.g. plot_baxter_solve_time.py's
+# structure names), and `StrCategoryLocator` from plotting directly against a string column (e.g.
+# plot_mbm_plan.py's `x="robot"`, handled entirely by seaborn/matplotlib's categorical machinery).
+CATEGORICAL_LOCATORS = (FixedLocator, StrCategoryLocator)
+
+# Human-readable robot names, for any axis/legend that would otherwise show the raw MotionBenchMaker
+# dataset key (e.g. "ur5").
+ROBOT_LABELS = {
+    "panda": "Panda",
+    "ur5": "UR5",
+    "fetch": "Fetch",
+    "baxter": "Baxter",
+}
+
+
+def wrap_tick_label(label: str) -> str:
+    """Break `label` one word per line (keeping a parenthesized suffix like "(SIMD x8)" together
+    as its own line), e.g. "Mutable MVT (SIMD x8)" -> "Mutable\nMVT\n(SIMD x8)", so labels stay
+    narrow enough to sit horizontally under their violin without colliding with their neighbors -
+    unlike a rotated label, a horizontal one can't lean on diagonal clearance for width."""
+    base, _, paren = label.partition(" (")
+    lines = base.split(" ")
+    if paren:
+        lines.append("(" + paren)
+    return "\n".join(lines)
+
 
 QUERY_METRICS = ["all", "colliding", "non_colliding"]
 
@@ -41,6 +71,97 @@ def save_figure(fig, out: pathlib.Path, crop: bool = False) -> None:
     fig.savefig(out.with_suffix(".png"), dpi=150)
     print(f"wrote {out}")
     print(f"wrote {out.with_suffix('.png')}")
+
+
+def _is_categorical(axis) -> bool:
+    """Whether `axis` has category positions rather than ticks placed automatically by a numeric
+    locator like `LogLocator` - covers both the robot/structure names set via an explicit
+    `ax.set_xticks(positions, labels)` call (`FixedLocator`) and ones plotted directly against a
+    string column, e.g. `x="robot"` (`StrCategoryLocator`); see `CATEGORICAL_LOCATORS`.
+
+    Either way, tick labels are looked up by each tick's position in a fixed list, not derived
+    from its numeric value (for the `FixedLocator` case, matplotlib installs this via a
+    `FuncFormatter` closing over a `{position: label}` dict, not a `FixedFormatter`, so checking
+    the locator is the reliable signal, not the formatter type). Dropping or adding a tick would
+    shift every later label onto the wrong position instead of just adding/removing one, so both
+    `_clip_ticks` and `_label_endpoints` skip these axes entirely.
+
+    Must be checked once, before either of those two functions runs: both call `axis.set_ticks`,
+    which itself installs a `FixedLocator` - so checking again *between* them would see their own
+    prior mutation and misidentify a numeric axis as categorical too."""
+    return isinstance(axis.get_major_locator(), CATEGORICAL_LOCATORS)
+
+
+def _clip_ticks(axis, lo: float, hi: float) -> None:
+    """Drop major/minor tick marks outside `[lo, hi]`, so none floats past the spine end that
+    `trim_spines_to_data` just set. Caller must already have excluded categorical axes."""
+    axis.set_ticks([t for t in axis.get_majorticklocs() if lo <= t <= hi], minor=False)
+    axis.set_ticks([t for t in axis.get_minorticklocs() if lo <= t <= hi], minor=True)
+
+
+def _format_endpoint(value: float, sig: int = 3) -> str:
+    """`value` to `sig` significant figures, plain decimal notation, no trailing zeros - for
+    labeling a range-frame's exact data endpoint, which (unlike the regular round-number ticks)
+    is essentially never itself a round number."""
+    if value == 0:
+        return "0"
+    decimals = max(sig - 1 - int(np.floor(np.log10(abs(value)))), 0)
+    text = f"{value:.{decimals}f}"
+    return text.rstrip("0").rstrip(".") if "." in text else text
+
+
+# A regular round-number tick within this fraction of the total visible span (in display
+# coordinates - log10-space on a log axis) of an endpoint gets dropped in `_label_endpoints`,
+# since its label would otherwise sit close enough to the endpoint's own label to visually
+# collide with it (e.g. a data max of 15140 landing right next to an existing "10^4" tick).
+ENDPOINT_PROXIMITY_FRAC = 0.06
+
+
+def _label_endpoints(axis, lo: float, hi: float) -> None:
+    """Add tick labels at the exact `lo`/`hi` data endpoints (Tufte range-frame style), alongside
+    whatever round-number ticks `_clip_ticks` kept, so the spine's ends read their real extreme
+    values rather than only the nearest round tick. Drops any regular tick that would land close
+    enough to crowd an endpoint's label (see `ENDPOINT_PROXIMITY_FRAC`).
+
+    Caller must already have excluded categorical axes; see `_is_categorical`."""
+    base_formatter = axis.get_major_formatter()
+    to_display = np.log10 if axis.get_scale() == "log" else (lambda v: v)
+
+    span = to_display(hi) - to_display(lo)
+    threshold = ENDPOINT_PROXIMITY_FRAC * span
+    ticks = [
+        t
+        for t in axis.get_majorticklocs()
+        if not any(abs(to_display(t) - to_display(v)) < threshold for v in (lo, hi))
+    ]
+    axis.set_ticks(sorted(ticks + [lo, hi]), minor=False)
+
+    def relabel(x, pos=None):
+        if any(np.isclose(x, v, rtol=1e-9) for v in (lo, hi)):
+            return _format_endpoint(x)
+        return base_formatter(x, pos)
+
+    axis.set_major_formatter(FuncFormatter(relabel))
+
+
+def trim_spines_to_data(ax) -> None:
+    """Trim the left/bottom spines to the tight bounding box of the plotted data (a Tufte
+    range-frame) instead of the full, margin-padded axis limits, so each spine's own extent shows
+    the data's range rather than an arbitrary rectangle. Also drops ticks beyond that range (which
+    would otherwise float past the now-shorter spine) and labels the exact endpoints. Call after
+    all of `ax`'s data is plotted (and after `sns.despine`, though order with that doesn't
+    actually matter)."""
+    (x_lo, x_hi), (y_lo, y_hi) = ax.dataLim.intervalx, ax.dataLim.intervaly
+    if np.isfinite(x_lo) and np.isfinite(x_hi):
+        ax.spines["bottom"].set_bounds(x_lo, x_hi)
+        if not _is_categorical(ax.xaxis):
+            _clip_ticks(ax.xaxis, x_lo, x_hi)
+            _label_endpoints(ax.xaxis, x_lo, x_hi)
+    if np.isfinite(y_lo) and np.isfinite(y_hi):
+        ax.spines["left"].set_bounds(y_lo, y_hi)
+        if not _is_categorical(ax.yaxis):
+            _clip_ticks(ax.yaxis, y_lo, y_hi)
+            _label_endpoints(ax.yaxis, y_lo, y_hi)
 
 
 def geomean(x: pd.Series) -> float:
