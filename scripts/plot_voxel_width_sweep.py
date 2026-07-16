@@ -74,7 +74,7 @@ def main() -> None:
     line_labels = [l for l in labels if not l.endswith("(r_max)")]
     ax.legend(
         [*line_handles, r_max_handle],
-        [*line_labels, "r_max"],
+        [*line_labels, "$r_\\text{max}$"],
         frameon=False,
     )
 
