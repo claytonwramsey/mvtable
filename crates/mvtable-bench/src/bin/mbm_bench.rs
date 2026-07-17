@@ -1,5 +1,5 @@
 //! Replays point-cloud collision-checking workloads extracted from the MotionBenchMaker
-//! dataset (see `crates/mbm-extract`) against `mvtable`, `capt`, and `kiddo`.
+//! dataset (see `crates/mbm-extract`) against `mvtable`, `capt`, `kiddo`, and `mvt_cpp`.
 //!
 //! [`sweep_voxel_width`] tries a schedule of candidate widths against a sample of that robot's own
 //! workloads and picks whichever minimizes SIMD (`collides_simd`, lanes=[`SIMD_L`]) query time,
@@ -717,6 +717,49 @@ fn main() -> Result<(), Box<dyn Error>> {
                             &batch_colliding,
                             &batch_non_colliding,
                         )?;
+                    }
+
+                    // mvt-cpp
+                    let tic = Instant::now();
+                    // skip instances that would crash
+                    match mvt_cpp::MvtCpp::try_new(&points, r_range) {
+                        Err(mvt_cpp::Overflow) => {
+                            eprintln!(
+                                "skipping mvt_cpp for {label} [{filter_name} x{scale}] @ \
+                                 {n_points} points: would overflow its fixed-capacity pools"
+                            );
+                        }
+                        Ok(mvt_cpp_instance) => {
+                            let ctx = RowContext {
+                                structure: "mvt_cpp",
+                                ..ctx
+                            };
+                            write_construction_row(
+                                &mut out,
+                                ctx,
+                                n_queries,
+                                tic.elapsed().as_secs_f64() * 1e9,
+                            )?;
+                            write_memory_row(&mut out, ctx, mvt_cpp_instance.memory_used())?;
+                            bench_scalar(
+                                &mut out,
+                                ctx,
+                                &mvt_cpp_instance,
+                                scalar_queries,
+                                &colliding,
+                                &non_colliding,
+                            )?;
+                            if !simd_batches.is_empty() && mvt_cpp::SIMD_WIDTH == SIMD_L {
+                                bench_simd(
+                                    &mut out,
+                                    ctx,
+                                    &mvt_cpp_instance,
+                                    simd_batches,
+                                    &batch_colliding,
+                                    &batch_non_colliding,
+                                )?;
+                            }
+                        }
                     }
 
                     // `kiddo`: scalar only, no SIMD-batched query API.

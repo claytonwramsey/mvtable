@@ -19,6 +19,7 @@ use mbm::{Problem, dir_to_problems};
 use mbm_plan_bench::{
     PointCloudWorld, SimdPointCloudWorld, is_sampleable, sample_scene, solve_with_backend,
 };
+use mvt_cpp::MvtCpp;
 use mvtable::{MutableMvt, Mvt};
 use mvtable_bench::filter::centervox_filter;
 use nalgebra::{Isometry3, Vector3};
@@ -75,7 +76,7 @@ fn max_problems_per_dataset() -> usize {
 
 /// Build `structure_name`'s backend from `filtered_points`, run the planner against it, and write
 /// one CSV row with the outcome (or log and return `Ok(())` without writing a row, if this
-/// particular backend/problem combination fails to solve).
+/// particular backend/problem combination fails to construct or solve).
 #[expect(
     clippy::too_many_arguments,
     reason = "internal driver, not a public API"
@@ -89,14 +90,25 @@ fn run_one_backend<R, W, const N: usize>(
     r_range: (f32, f32),
     r_filter: f32,
     name: &str,
-    builder: impl Fn(&[[f32; 3]], (f32, f32)) -> W,
+    // An `Err` means "skip this backend for this problem, don't write a row" - in practice only
+    // `MvtCpp::try_new`
+    builder: impl Fn(&[[f32; 3]], (f32, f32)) -> Result<W, Box<dyn std::error::Error>>,
     csv: &mut impl Write,
 ) -> Result<(), Box<dyn std::error::Error>>
 where
     R: Robot<N, f32> + BlockValidate<N, f32, W> + Clone,
 {
     let tic = Instant::now();
-    let structure = builder(filtered_points, r_range);
+    let structure = match builder(filtered_points, r_range) {
+        Ok(structure) => structure,
+        Err(e) => {
+            eprintln!(
+                "  {name}: skipping {robot_name}/{dataset}#{}: {e}",
+                problem.id
+            );
+            return Ok(());
+        }
+    };
     let construction_secs = tic.elapsed().as_secs_f64();
 
     let result = match solve_with_backend(robot.clone(), problem, structure, MAX_SOLVE_TIME) {
@@ -153,10 +165,12 @@ where
     R: Robot<N, f32>
         + BlockValidate<N, f32, PointCloudWorld<Mvt<3, f32>>>
         + BlockValidate<N, f32, PointCloudWorld<MutableMvt<3, f32>>>
+        + BlockValidate<N, f32, PointCloudWorld<MvtCpp>>
         + BlockValidate<N, f32, PointCloudWorld<Capt<3, f32, u32>>>
         + BlockValidate<N, f32, PointCloudWorld<ImmutableKdTree<f32, 3>>>
         + BlockValidate<N, f32, SimdPointCloudWorld<Mvt<3, f32>>>
         + BlockValidate<N, f32, SimdPointCloudWorld<MutableMvt<3, f32>>>
+        + BlockValidate<N, f32, SimdPointCloudWorld<MvtCpp>>
         + BlockValidate<N, f32, SimdPointCloudWorld<Capt<3, f32, u32>>>
         + Clone,
 {
@@ -202,7 +216,7 @@ where
                 r_range,
                 r_filter,
                 "mvtable",
-                |pc, _| PointCloudWorld(Mvt::new(pc, voxel_width)),
+                |pc, _| Ok(PointCloudWorld(Mvt::new(pc, voxel_width))),
                 csv,
             )?;
             run_one_backend(
@@ -214,7 +228,23 @@ where
                 r_range,
                 r_filter,
                 "mvtable_mutable",
-                |pc, _| PointCloudWorld(MutableMvt::new(pc, voxel_width)),
+                |pc, _| Ok(PointCloudWorld(MutableMvt::new(pc, voxel_width))),
+                csv,
+            )?;
+            run_one_backend(
+                &robot,
+                robot_name,
+                dataset,
+                problem,
+                &filtered_points,
+                r_range,
+                r_filter,
+                "mvtable_cpp",
+                |pc, r_range| {
+                    MvtCpp::try_new(pc, r_range)
+                        .map(PointCloudWorld)
+                        .map_err(Into::into)
+                },
                 csv,
             )?;
             run_one_backend(
@@ -226,7 +256,7 @@ where
                 r_range,
                 r_filter,
                 "capt",
-                |pc, r_range| PointCloudWorld(Capt::new(pc, r_range, 1)),
+                |pc, r_range| Ok(PointCloudWorld(Capt::new(pc, r_range, 1))),
                 csv,
             )?;
             run_one_backend(
@@ -238,7 +268,7 @@ where
                 r_range,
                 r_filter,
                 "kiddo",
-                |pc, _| PointCloudWorld(ImmutableKdTree::new_from_slice(pc)),
+                |pc, _| Ok(PointCloudWorld(ImmutableKdTree::new_from_slice(pc))),
                 csv,
             )?;
             run_one_backend(
@@ -250,7 +280,7 @@ where
                 r_range,
                 r_filter,
                 "mvtable_simd",
-                |pc, _| SimdPointCloudWorld(Mvt::new(pc, voxel_width)),
+                |pc, _| Ok(SimdPointCloudWorld(Mvt::new(pc, voxel_width))),
                 csv,
             )?;
             run_one_backend(
@@ -262,7 +292,23 @@ where
                 r_range,
                 r_filter,
                 "mvtable_mutable_simd",
-                |pc, _| SimdPointCloudWorld(MutableMvt::new(pc, voxel_width)),
+                |pc, _| Ok(SimdPointCloudWorld(MutableMvt::new(pc, voxel_width))),
+                csv,
+            )?;
+            run_one_backend(
+                &robot,
+                robot_name,
+                dataset,
+                problem,
+                &filtered_points,
+                r_range,
+                r_filter,
+                "mvt_cpp_simd",
+                |pc, r_range| {
+                    MvtCpp::try_new(pc, r_range)
+                        .map(SimdPointCloudWorld)
+                        .map_err(Into::into)
+                },
                 csv,
             )?;
             run_one_backend(
@@ -274,7 +320,7 @@ where
                 r_range,
                 r_filter,
                 "capt_simd",
-                |pc, _| SimdPointCloudWorld(Capt::new(pc, r_range, 8)),
+                |pc, _| Ok(SimdPointCloudWorld(Capt::new(pc, r_range, 8))),
                 csv,
             )?;
 

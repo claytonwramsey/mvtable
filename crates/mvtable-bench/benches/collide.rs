@@ -1,11 +1,12 @@
-//! Construction- and query-time comparison of `mvtable` against `capt` and `kiddo`'s immutable
-//! k-d tree.
+//! Construction- and query-time comparison of `mvtable` against `capt`, `kiddo`'s immutable
+//! k-d tree, and `mvt_cpp` (the vendored C++ reference implementation, see
+//! `crates/mvt-cpp/vendor/README.md`).
 #![feature(portable_simd)]
 
 use std::{hint::black_box, simd::Simd};
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-use mvtable_bench::{Structure, uniform_cloud};
+use mvtable_bench::{SimdStructure, Structure, uniform_cloud};
 use rand::{RngExt, SeedableRng, rngs::SmallRng};
 
 const R_MAX: f32 = 0.05;
@@ -58,12 +59,33 @@ fn bench_construction<S: Structure<3>>(
     }
 }
 
+/// Like [`bench_construction`], but for `mvt_cpp`: not generic over `S: Structure<3>` because it
+/// needs to skip (rather than crash on) any `n` that would overflow the vendored implementation's
+/// fixed-capacity pools - see `mvt_cpp::Overflow`'s doc comment. Probes with one `try_new` call
+/// (dropped immediately) rather than the panicking `Structure::build` used inside the timed loop,
+/// since `criterion`'s `b.iter()` closure has no way to skip a benchmark mid-run.
+fn bench_construction_mvt_cpp(group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>) {
+    let mut rng = SmallRng::seed_from_u64(0);
+    for &n in &SIZES {
+        let points: Vec<[f32; 3]> = uniform_cloud(&mut rng, n, HALF_WIDTH);
+        if mvt_cpp::MvtCpp::try_new(&points, (0.0, R_MAX)).is_err() {
+            eprintln!("skipping mvt_cpp construction bench at n={n}: would overflow its fixed-capacity pools");
+            continue;
+        }
+        let id = BenchmarkId::new(<mvt_cpp::MvtCpp as Structure<3>>::NAME, n);
+        group.bench_with_input(id, &points, |b, points| {
+            b.iter(|| black_box(<mvt_cpp::MvtCpp as Structure<3>>::build(points, (0.0, R_MAX))));
+        });
+    }
+}
+
 fn construction(c: &mut Criterion) {
     let mut group = c.benchmark_group("construction");
     bench_construction::<mvtable::Mvt<3, f32>>(&mut group);
     bench_construction::<mvtable::MutableMvt<3, f32>>(&mut group);
     bench_construction::<capt::Capt<3, f32, u32>>(&mut group);
     bench_construction::<kiddo::ImmutableKdTree<f32, 3>>(&mut group);
+    bench_construction_mvt_cpp(&mut group);
     group.finish();
 }
 
@@ -177,6 +199,22 @@ fn bench_scalar_query(
                 }
             });
         });
+
+        let mvt_cpp_instance = match mvt_cpp::MvtCpp::try_new(&points, (0.0, R_MAX)) {
+            Ok(instance) => instance,
+            Err(mvt_cpp::Overflow) => {
+                eprintln!("skipping mvt_cpp scalar query bench at n={n}: would overflow its fixed-capacity pools");
+                continue;
+            }
+        };
+        let id = BenchmarkId::new(format!("mvt_cpp_scalar/{trace_name}"), n);
+        group.bench_with_input(id, &queries, |b, queries| {
+            b.iter(|| {
+                for (center, radius) in queries {
+                    black_box(mvt_cpp_instance.collides(center, *radius));
+                }
+            });
+        });
     }
 }
 
@@ -254,6 +292,41 @@ fn bench_simd_query<const L: usize>(
     }
 }
 
+/// Like [`bench_simd_query`], but for `mvt_cpp` at its one hardware-fixed lane width
+/// (`mvt_cpp::SIMD_WIDTH` - 8 on x86_64/AVX2, matching [`MAX_L`]; 4 on aarch64/NEON, which
+/// [`bench_simd_query`]'s `L=4` instantiation happens to already cover) - its vendored SIMD
+/// backend doesn't support other lane widths (see `crates/mvt-cpp/vendor/README.md`), and it
+/// needs to skip (rather than crash on) any `n` that would overflow its fixed-capacity pools (see
+/// `mvt_cpp::Overflow`'s doc comment).
+fn bench_simd_query_mvt_cpp(
+    group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
+    trace_name: &str,
+    trace_of: impl Fn(&[[f32; 3]], &mut SmallRng) -> Vec<([f32; 3], f32)>,
+) {
+    let mut rng = SmallRng::seed_from_u64(1);
+    for &n in &SIZES {
+        let points: Vec<[f32; 3]> = uniform_cloud(&mut rng, n, HALF_WIDTH);
+        let mvt_cpp_instance = match mvt_cpp::MvtCpp::try_new(&points, (0.0, R_MAX)) {
+            Ok(instance) => instance,
+            Err(mvt_cpp::Overflow) => {
+                eprintln!("skipping mvt_cpp SIMD query bench at n={n}: would overflow its fixed-capacity pools");
+                continue;
+            }
+        };
+        let queries = trace_of(&points, &mut rng);
+        let batches = to_simd_batches::<{ mvt_cpp::SIMD_WIDTH }>(&queries);
+
+        let id = BenchmarkId::new(format!("mvt_cpp_simd_l{}/{trace_name}", mvt_cpp::SIMD_WIDTH), n);
+        group.bench_with_input(id, &batches, |b, batches| {
+            b.iter(|| {
+                for (centers, radii) in batches {
+                    black_box(SimdStructure::collides_simd(&mvt_cpp_instance, centers, *radii));
+                }
+            });
+        });
+    }
+}
+
 fn simd_query(c: &mut Criterion) {
     let mut group = c.benchmark_group("simd_query");
     let traces: [(&str, TraceFn); 3] = [
@@ -269,6 +342,7 @@ fn simd_query(c: &mut Criterion) {
         bench_scalar_query(&mut group, trace_name, trace_of);
         bench_simd_query::<4>(&mut group, trace_name, trace_of);
         bench_simd_query::<MAX_L>(&mut group, trace_name, trace_of);
+        bench_simd_query_mvt_cpp(&mut group, trace_name, trace_of);
     }
     group.finish();
 }

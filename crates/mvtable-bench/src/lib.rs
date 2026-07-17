@@ -205,6 +205,56 @@ impl<const K: usize> SimdStructure<K> for mvtable::MutableMvt<K, f32> {
     }
 }
 
+/// The vendored C++ reference implementation of the MVT (see `crates/mvt-cpp/vendor/README.md`),
+/// hardcoded to 3D like the upstream code it wraps (unlike `mvtable`/`capt`/`kiddo`, which are
+/// generic over `K`).
+impl Structure<3> for mvt_cpp::MvtCpp {
+    const NAME: &'static str = "mvt_cpp";
+
+    fn build(points: &[[f32; 3]], r_range: (f32, f32)) -> Self {
+        Self::new(points, r_range)
+    }
+
+    fn collides(&self, center: &[f32; 3], radius: f32) -> bool {
+        Self::collides(self, center, radius)
+    }
+}
+
+impl SimdStructure<3> for mvt_cpp::MvtCpp {
+    /// Uses the vendored implementation's true vectorized `collides_simd` when `L ==
+    /// mvt_cpp::SIMD_WIDTH` but otherwise falls back to another impl.
+    fn collides_simd<const L: usize>(
+        &self,
+        centers: &[Simd<f32, L>; 3],
+        radii: Simd<f32, L>,
+    ) -> bool
+    where
+        Simd<f32, L>: AxisSimd<L>,
+        <Simd<f32, L> as SimdPartialEq>::Mask: Copy,
+    {
+        if L != mvt_cpp::SIMD_WIDTH {
+            let xs = centers[0].to_array();
+            let ys = centers[1].to_array();
+            let zs = centers[2].to_array();
+            let rs = radii.to_array();
+            return (0..L).any(|l| self.collides(&[xs[l], ys[l], zs[l]], rs[l]));
+        }
+
+        let to_fixed = |v: [f32; L]| -> [f32; mvt_cpp::SIMD_WIDTH] {
+            let mut out = [0.0f32; mvt_cpp::SIMD_WIDTH];
+            out.copy_from_slice(&v);
+            out
+        };
+        let centers_fixed = [
+            to_fixed(centers[0].to_array()),
+            to_fixed(centers[1].to_array()),
+            to_fixed(centers[2].to_array()),
+        ];
+        let radii_fixed = to_fixed(radii.to_array());
+        Self::collides_simd(self, &centers_fixed, &radii_fixed)
+    }
+}
+
 impl<const K: usize> SimdStructure<K> for capt::Capt<K, f32, u32> {
     fn collides_simd<const L: usize>(
         &self,

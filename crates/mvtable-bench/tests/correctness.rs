@@ -226,6 +226,26 @@ fn radius_beyond_r_max() {
     }
 }
 
+#[test]
+fn mvt_cpp_matches_brute_force() {
+    let mut rng = SmallRng::seed_from_u64(9);
+    let points = uniform_cloud::<_, 3>(&mut rng, 500, 5.0);
+    let r_max = 0.3;
+    let mvt =
+        mvt_cpp::MvtCpp::try_new(&points, (0.0, r_max)).expect("test data shouldn't overflow");
+
+    for center in query_grid::<3>(6.0, 12) {
+        for &radius in &[0.0, 0.05, 0.15, 0.3] {
+            let expected = brute_force_collides(&points, &center, radius);
+            assert_eq!(
+                mvt.collides(&center, radius),
+                expected,
+                "mvt_cpp disagreed with brute force: center={center:?}, radius={radius}"
+            );
+        }
+    }
+}
+
 /// `mvtable::Mvt::with_point_radius` isn't part of the shared [`Structure`] interface (`capt` is
 /// the only other structure that models point radius, and `kiddo` cannot), so it's checked here
 /// directly against a brute-force oracle with the point radius folded into the query radius.

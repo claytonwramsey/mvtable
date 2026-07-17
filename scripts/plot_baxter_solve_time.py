@@ -28,6 +28,8 @@ ALL_STRUCTURES = [
     "mvtable_simd",
     "mvtable_mutable",
     "mvtable_mutable_simd",
+    "mvtable_cpp",
+    "mvt_cpp_simd",
     "capt",
     "capt_simd",
     "kiddo",
@@ -37,6 +39,8 @@ COLORS = {
     "mvtable_simd": lighten("#0072B2"),
     "mvtable_mutable": "#D55E00",
     "mvtable_mutable_simd": lighten("#D55E00"),
+    "mvtable_cpp": "#CC79A7",
+    "mvt_cpp_simd": lighten("#CC79A7"),
     "capt": "#009E73",
     "capt_simd": lighten("#009E73"),
     "kiddo": "#E69F00",
@@ -46,6 +50,8 @@ LABELS = {
     "mvtable_simd": "MVT (SIMD)",
     "mvtable_mutable": "Mutable MVT",
     "mvtable_mutable_simd": "Mutable MVT (SIMD)",
+    "mvtable_cpp": "MVT (C++)",
+    "mvt_cpp_simd": "MVT (C++, SIMD)",
     "capt": "CAPT",
     "capt_simd": "CAPT (SIMD)",
     "kiddo": "kiddo",
@@ -88,7 +94,7 @@ def main() -> None:
     df = df.copy()
     df["time_ms"] = df.time_secs * 1000
 
-    fig, ax = plt.subplots(figsize=(6, 4.5))
+    fig, ax = plt.subplots(figsize=(0.9 * len(args.structures), 4.5))
     sns.violinplot(
         data=df,
         x="structure",

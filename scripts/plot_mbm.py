@@ -40,18 +40,20 @@ from mbm_common import (
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 RESULTS = ROOT / "data" / "mbm_bench_results.csv"
 
-ALL_STRUCTURES = ["mvtable", "mvtable_mutable", "capt", "kiddo"]
+ALL_STRUCTURES = ["mvtable", "mvtable_mutable", "capt", "kiddo", "mvt_cpp"]
 COLORS = {
     "mvtable": "#0072B2",
     "mvtable_mutable": "#D55E00",
     "capt": "#009E73",
     "kiddo": "#E69F00",
+    "mvt_cpp": "#CC79A7",
 }
 LABELS = {
     "mvtable": "MVT",
     "mvtable_mutable": "Mutable MVT",
     "capt": "CAPT",
     "kiddo": "kiddo",
+    "mvt_cpp": "MVT (C++)",
 }
 SIMD_COLORS = {name: lighten(color) for name, color in COLORS.items()}
 
@@ -63,18 +65,19 @@ YLABEL_PAD = -8
 
 # Fixed top-to-bottom legend order for the query panel (each structure's SIMD entry is grouped
 # in beneath it by `legend_order`) - kiddo first since it's the only non-SIMD-capable baseline,
-# then CAPT, then the two MVT variants.
+# then CAPT, then the three MVT variants.
 QUERY_LEGEND_ORDER = [
     LABELS["kiddo"],
     LABELS["capt"],
     LABELS["mvtable"],
     LABELS["mvtable_mutable"],
+    LABELS["mvt_cpp"],
 ]
 
 SIMD_LANES = 8
 SIMD_LABEL_SUFFIX = " (SIMD)"
 # `kiddo` has no SIMD-batched query API, so it only ever has `lanes == 1` rows.
-SIMD_CAPABLE = {"mvtable", "mvtable_mutable", "capt"}
+SIMD_CAPABLE = {"mvtable", "mvtable_mutable", "capt", "mvt_cpp"}
 
 
 def parse_args() -> argparse.Namespace:

@@ -6,6 +6,7 @@ publish = false
 
 [dependencies]
 mvtable = { path = "../mvtable", features = ["simd"] }
+mvt-cpp = { path = "../mvt-cpp" }
 mvtable-bench = { path = "../mvtable-bench" }
 mbm-extract = { path = "../mbm-extract" }
 capt = { version = "3.1", features = ["simd"] }

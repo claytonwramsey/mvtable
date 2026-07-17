@@ -5070,6 +5070,7 @@ dependencies = [
  "kiddo",
  "mbm",
  "mbm-extract",
+ "mvt-cpp",
  "mvtable",
  "mvtable-bench",
  "nalgebra",
@@ -5248,6 +5249,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "96a1fe2275b68991faded2c80aa4a33dba398b77d276038b8f50701a22e55918"
 
 [[package]]
+name = "mvt-cpp"
+version = "0.1.0"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "mvtable"
 version = "0.1.0"
 dependencies = [
@@ -5261,6 +5269,7 @@ dependencies = [
  "capt",
  "criterion",
  "kiddo",
+ "mvt-cpp",
  "mvtable",
  "rand 0.10.2",
 ]
