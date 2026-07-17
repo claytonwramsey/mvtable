@@ -537,7 +537,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let max_scenes = std::env::var("MBM_BENCH_MAX_SCENES")
         .ok()
         .and_then(|s| s.parse().ok());
-    let workloads = read_workloads(&data_dir, max_scenes)?;
+    let workloads = read_workloads(&data_dir, max_scenes)
+        .inspect_err(|_| eprintln!("Missing workloads! Did you remember to run `mbm-extract`?"))?;
 
     let out_path = data_dir.join("mbm_bench_results.csv");
     let mut out = BufWriter::new(File::create(&out_path)?);
@@ -563,7 +564,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     for robot in &robot_order {
-        let loaded = load_workloads(&raw_dir, &by_robot[robot.as_str()])?;
+        let loaded = load_workloads(&raw_dir, &by_robot[robot.as_str()])
+            .inspect_err(|_| eprintln!("Missing workload file for {robot}!"))?;
         let voxel_width = sweep_voxel_width(robot, &loaded, &mut sweep_out)?;
 
         for w in &loaded {
