@@ -44,11 +44,11 @@ COLORS = {
 }
 LABELS = {
     "mvtable": "MVT",
-    "mvtable_simd": "MVT (SIMD x8)",
+    "mvtable_simd": "MVT (SIMD)",
     "mvtable_mutable": "Mutable MVT",
-    "mvtable_mutable_simd": "Mutable MVT (SIMD x8)",
+    "mvtable_mutable_simd": "Mutable MVT (SIMD)",
     "capt": "CAPT",
-    "capt_simd": "CAPT (SIMD x8)",
+    "capt_simd": "CAPT (SIMD)",
     "kiddo": "kiddo",
 }
 ROBOT_ORDER = ["panda", "ur5", "fetch", "baxter"]

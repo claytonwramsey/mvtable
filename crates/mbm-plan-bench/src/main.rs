@@ -56,11 +56,11 @@ const DENSITY: f32 = 6000.0;
 const R_FILTER_SCALE: f32 = 4.0;
 
 /// Per-robot `mvtable::Mvt`/`MutableMvt` voxel width, tuned by `mbm_bench`'s per-robot
-/// hyperparameter sweep.
-const PANDA_VOXEL_WIDTH: f32 = 0.1530;
-const UR5_VOXEL_WIDTH: f32 = 0.1864;
-const FETCH_VOXEL_WIDTH: f32 = 0.1409;
-const BAXTER_VOXEL_WIDTH: f32 = 0.1321;
+/// hyperparameter sweep (SIMD `collides_simd` throughput, lanes=8).
+const PANDA_VOXEL_WIDTH: f32 = 0.17324;
+const UR5_VOXEL_WIDTH: f32 = 0.22427;
+const FETCH_VOXEL_WIDTH: f32 = 0.13799;
+const BAXTER_VOXEL_WIDTH: f32 = 0.17075;
 
 /// Wall-clock cutoff per (backend, problem) solve attempt, so a pathologically slow combination
 /// can't stall the whole unattended run.
@@ -306,7 +306,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "panda",
         &Panda::JOINT_NAMES,
         Isometry3::identity(),
-        (Panda::MIN_RADIUS, Panda::MAX_RADIUS),
+        (Panda::MIN_RADIUS, mvtable_bench::mobile_max_radius("panda")),
         PANDA_VOXEL_WIDTH,
         &resources,
         &DATASETS,
@@ -320,7 +320,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Vector3::new(0.0, 0.0, -0.9144),
             Vector3::new(0.0, 0.0, -1.57),
         ),
-        (Ur5::MIN_RADIUS, Ur5::MAX_RADIUS),
+        (Ur5::MIN_RADIUS, mvtable_bench::mobile_max_radius("ur5")),
         UR5_VOXEL_WIDTH,
         &resources,
         &DATASETS,
@@ -331,7 +331,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "fetch",
         &Fetch::JOINT_NAMES,
         Isometry3::identity(),
-        (Fetch::MIN_RADIUS, Fetch::MAX_RADIUS),
+        (Fetch::MIN_RADIUS, mvtable_bench::mobile_max_radius("fetch")),
         FETCH_VOXEL_WIDTH,
         &resources,
         &DATASETS,
@@ -342,7 +342,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "baxter",
         &Baxter::JOINT_NAMES,
         Isometry3::identity(),
-        (Baxter::MIN_RADIUS, Baxter::MAX_RADIUS),
+        (Baxter::MIN_RADIUS, mvtable_bench::mobile_max_radius("baxter")),
         BAXTER_VOXEL_WIDTH,
         &resources,
         &BAXTER_DATASETS,

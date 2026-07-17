@@ -15,6 +15,17 @@ use rand::{Rng, RngExt};
 
 pub mod filter;
 
+/// Radius of a robot's largest sphere that actually moves during planning.
+pub fn mobile_max_radius(robot: &str) -> f32 {
+    match robot {
+        "panda" => 0.06,
+        "ur5" => 0.08,
+        "fetch" => 0.15,
+        "baxter" => 0.1,
+        _ => panic!("no largest-mobile-sphere radius recorded for robot {robot:?}"),
+    }
+}
+
 /// A minimal common interface over the collision-checking structures being compared.
 pub trait Structure<const K: usize>: Sized {
     /// A short, human-readable name for this structure, used in benchmark/test output.

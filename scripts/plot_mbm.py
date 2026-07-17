@@ -2,10 +2,10 @@
 """Plot construction/memory/query throughput on MotionBenchMaker workloads.
 
 Reads `data/mbm_bench_results.csv` (produced by `cargo run --release -p mvtable-bench --bin
-mbm_bench`) and produces three figures: construction time, memory consumption, and query time.
-With `--titles` (used for the README) the query figure is a 3-panel (all/colliding/non-colliding
-queries) breakdown sharing a y-axis; without it (the default, for the blog) it's just the
-all-queries panel, which reads better at blog width.
+mbm_bench`) and produces three figures: construction time, memory consumption, and query time (all
+queries - colliding and non-colliding together). `--titles` adds a per-panel chart title to each
+figure; without it (the default) the panels are left untitled to drop cleanly into a page that
+supplies its own captions.
 
 Use `--structures` to pick which ones appear:
 
@@ -13,7 +13,7 @@ Use `--structures` to pick which ones appear:
     python3 scripts/plot_mbm.py --structures mvtable,capt,kiddo    # the general comparison
     python3 scripts/plot_mbm.py --structures mvtable,mvtable_mutable   # the mutable-vs-immutable one
 
-Both axes are log-scaled on every panel: point cloud size spans 1 to ~15,000 points in this
+Both axes are log-scaled on every panel: point cloud size spans 1 to ~50,000 points in this
 dataset (heavily right-skewed - most real, filtered clouds are small), and every timing/memory
 metric spans a comparable range, so a linear scale either crushes the small end into a sliver or
 cuts off the large end.
@@ -55,17 +55,26 @@ LABELS = {
 }
 SIMD_COLORS = {name: lighten(color) for name, color in COLORS.items()}
 
+# Negative labelpad on every panel's y-axis label, pulled in from matplotlib's default (4pt) so
+# the label sits closer to the tick numbers rather than leaving a wide gap of unused margin to its
+# left - `fig.tight_layout()` shrinks the figure's left margin to match, so the freed-up space
+# goes to the plot area instead of sitting blank.
+YLABEL_PAD = -8
+
+# Fixed top-to-bottom legend order for the query panel (each structure's SIMD entry is grouped
+# in beneath it by `legend_order`) - kiddo first since it's the only non-SIMD-capable baseline,
+# then CAPT, then the two MVT variants.
+QUERY_LEGEND_ORDER = [
+    LABELS["kiddo"],
+    LABELS["capt"],
+    LABELS["mvtable"],
+    LABELS["mvtable_mutable"],
+]
+
 SIMD_LANES = 8
+SIMD_LABEL_SUFFIX = " (SIMD)"
 # `kiddo` has no SIMD-batched query API, so it only ever has `lanes == 1` rows.
 SIMD_CAPABLE = {"mvtable", "mvtable_mutable", "capt"}
-
-# left-to-right order of the query panels in the 3-panel query figure.
-QUERY_METRICS = ["all", "colliding", "non_colliding"]
-QUERY_TITLES = {
-    "all": "Query Time, All Queries",
-    "colliding": "Query Time, Colliding Queries",
-    "non_colliding": "Query Time, Non-Colliding Queries",
-}
 
 
 def parse_args() -> argparse.Namespace:
@@ -133,7 +142,7 @@ def plot_construction(
         binned_line(
             ax, sub.n_points, sub.ms, COLORS[name], annotate=False, label=LABELS[name]
         )
-    ax.set_ylabel("Construction time (milliseconds)")
+    ax.set_ylabel("Construction time (milliseconds)", labelpad=YLABEL_PAD)
     if title:
         ax.set_title(title)
 
@@ -157,7 +166,7 @@ def plot_memory(ax, df: pd.DataFrame, structures: list, title: str | None) -> No
         binned_line(
             ax, sub.n_points, sub.kib, COLORS[name], annotate=False, label=LABELS[name]
         )
-    ax.set_ylabel("Memory (KiB)")
+    ax.set_ylabel("Memory (KiB)", labelpad=YLABEL_PAD)
     if title:
         ax.set_title(title)
 
@@ -184,9 +193,7 @@ def plot_query_panel(
             # so the two overlapping point clouds don't just paint over each other.
             if lanes != 1 or name not in SIMD_CAPABLE:
                 density_hexbin(ax, sub.n_points, sub.ns_per_op, color, extent)
-            label = (
-                LABELS[name] if lanes == 1 else f"{LABELS[name]} (SIMD x{SIMD_LANES})"
-            )
+            label = LABELS[name] if lanes == 1 else f"{LABELS[name]}{SIMD_LABEL_SUFFIX}"
             binned_line(
                 ax,
                 sub.n_points,
@@ -197,7 +204,7 @@ def plot_query_panel(
                 label=label,
             )
     if is_first:
-        ax.set_ylabel("Time (Nanoseconds)")
+        ax.set_ylabel("Time (Nanoseconds)", labelpad=YLABEL_PAD)
     if title:
         ax.set_title(title)
 
@@ -210,26 +217,75 @@ def finish_single_panel(ax, xlabel: str) -> None:
     trim_spines_to_data(ax)
 
 
-def legend_order(handles, labels, pin_first: str | None = None):
+def legend_order(
+    handles, labels, pin_first: str | None = None, fixed_order: list[str] | None = None
+):
     """Reorder legend entries to match the plotted lines' relative vertical order at the left
     edge of the plot (where a left-to-right reader looks first), so e.g. the highest series
     (CAPT, for construction time) reads first/top in the legend rather than in a fixed
     structure order.
 
-    `pin_first`, if given, forces that label to the top regardless of its left-edge position -
-    for the memory panel, where CAPT starts close to the pack but leads for nearly the whole
-    plot, so top-of-legend is the more honest read than "whatever's highest at x=0"."""
-    order = sorted(range(len(handles)), key=lambda i: handles[i].get_ydata()[0], reverse=True)
-    if pin_first is not None:
-        order = sorted(order, key=lambda i: labels[i] != pin_first)
-    return [handles[i] for i in order], [labels[i] for i in order]
+    `pin_first`, if given, forces that label to the top regardless of its left-edge position - used
+    for the memory panel, where CAPT starts close to the pack at the smallest point clouds but
+    consistently leads or trails for nearly the whole plot, so top-of-legend is the more honest
+    read than "whatever's highest at x=0".
+
+    `fixed_order`, if given, replaces height-based ordering entirely with this explicit sequence
+    of scalar labels - used for the query panel, where the intended reading order (kiddo first,
+    then CAPT/MVT/Mutable MVT) doesn't track well enough with the lines' relative height at any
+    single x position to trust automatic ordering. Mutually exclusive with `pin_first`.
+
+    Whatever position a structure's scalar entry lands in, its "<name> (SIMD)" entry (if any) is
+    pulled out of height order and placed directly beneath it - the pairing is more useful to a
+    reader than strict height ordering, which can otherwise interleave one structure's SIMD line
+    between two unrelated structures' scalar lines."""
+    if fixed_order is not None:
+        order = sorted(
+            range(len(handles)),
+            key=lambda i: (
+                fixed_order.index(labels[i])
+                if labels[i] in fixed_order
+                else len(fixed_order)
+            ),
+        )
+    else:
+        order = sorted(
+            range(len(handles)), key=lambda i: handles[i].get_ydata()[0], reverse=True
+        )
+        if pin_first is not None:
+            order = sorted(order, key=lambda i: labels[i] != pin_first)
+
+    simd_index = {
+        labels[i][: -len(SIMD_LABEL_SUFFIX)]: i
+        for i in order
+        if labels[i].endswith(SIMD_LABEL_SUFFIX)
+    }
+    grouped = []
+    for i in order:
+        if labels[i].endswith(SIMD_LABEL_SUFFIX):
+            continue  # inserted right after its scalar counterpart below
+        grouped.append(i)
+        if labels[i] in simd_index:
+            grouped.append(simd_index[labels[i]])
+
+    return [handles[i] for i in grouped], [labels[i] for i in grouped]
 
 
 def save_single_panel(
-    fig, ax, xlabel: str, out: pathlib.Path, crop: bool, pin_legend_first: str | None = None
+    fig,
+    ax,
+    xlabel: str,
+    out: pathlib.Path,
+    crop: bool,
+    pin_legend_first: str | None = None,
+    legend_fixed_order: list[str] | None = None,
 ) -> None:
     finish_single_panel(ax, xlabel)
-    handles, labels = legend_order(*ax.get_legend_handles_labels(), pin_first=pin_legend_first)
+    handles, labels = legend_order(
+        *ax.get_legend_handles_labels(),
+        pin_first=pin_legend_first,
+        fixed_order=legend_fixed_order,
+    )
     ax.legend(handles, labels, frameon=False)
     fig.tight_layout()
     save_figure(fig, out, crop=crop)
@@ -271,57 +327,32 @@ def main() -> None:
         pin_legend_first=LABELS["capt"],
     )
 
-    query_out = args.out_prefix.parent / f"{args.out_prefix.name}_query.svg"
-    if not args.titles:
-        # the blog embeds figures at a width where the 3-panel breakdown below is hard to read;
-        # just the all-queries panel carries the same headline result more legibly.
-        all_queries = df[df.metric == "all"]
-        extent = (
-            all_queries.n_points.min(),
-            all_queries.n_points.max(),
-            all_queries.ns_per_op.min(),
-            all_queries.ns_per_op.max(),
-        )
-        fig, ax = plt.subplots(figsize=(5, 4.5))
-        plot_query_panel(
-            ax, df, args.structures, "all", extent, is_first=True, title=None
-        )
-        save_single_panel(fig, ax, xlabel, query_out, crop)
-        return
-
-    # query time, 3 panels (all / colliding / non-colliding) sharing one y-axis, for the README
-    # where there's room (and surrounding prose) to explain the breakdown.
-    query_all = df[df.metric.isin(QUERY_METRICS)]
+    # query time (all queries - colliding and non-colliding together)
+    all_queries = df[df.metric == "all"]
     extent = (
-        query_all.n_points.min(),
-        query_all.n_points.max(),
-        query_all.ns_per_op.min(),
-        query_all.ns_per_op.max(),
+        all_queries.n_points.min(),
+        all_queries.n_points.max(),
+        all_queries.ns_per_op.min(),
+        all_queries.ns_per_op.max(),
     )
-    fig, axes = plt.subplots(1, 3, figsize=(15, 4.5), sharey=True)
-    for i, (ax, metric) in enumerate(zip(axes, QUERY_METRICS)):
-        plot_query_panel(
-            ax,
-            df,
-            args.structures,
-            metric,
-            extent,
-            is_first=(i == 0),
-            title=QUERY_TITLES[metric],
-        )
-        finish_single_panel(ax, "")
-    handles, labels = legend_order(*axes[0].get_legend_handles_labels())
-    fig.supxlabel(xlabel, y=0.055)
-    fig.legend(
-        handles,
-        labels,
-        loc="lower center",
-        ncol=len(labels),
-        frameon=False,
-        bbox_to_anchor=(0.5, 0.0),
+    fig, ax = plt.subplots(figsize=(5, 4.5))
+    plot_query_panel(
+        ax,
+        df,
+        args.structures,
+        "all",
+        extent,
+        is_first=True,
+        title="Query Time" if args.titles else None,
     )
-    fig.tight_layout(rect=(0, 0.065, 1, 1))
-    save_figure(fig, query_out)
+    save_single_panel(
+        fig,
+        ax,
+        xlabel,
+        args.out_prefix.parent / f"{args.out_prefix.name}_query.svg",
+        crop,
+        legend_fixed_order=QUERY_LEGEND_ORDER,
+    )
 
 
 if __name__ == "__main__":

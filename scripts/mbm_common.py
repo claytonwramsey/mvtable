@@ -136,6 +136,17 @@ def _label_endpoints(axis, lo: float, hi: float) -> None:
     ]
     axis.set_ticks(sorted(ticks + [lo, hi]), minor=False)
 
+    # `base_formatter` (typically a `ScalarFormatter`) only knows the tick locations passed to its
+    # own `set_locs` - normally done by the draw cycle for whichever formatter is currently
+    # installed. Since it's about to be wrapped in `relabel` below instead of installed directly,
+    # that call would never happen, and a `ScalarFormatter` renders every non-endpoint tick as ''
+    # when it hasn't seen any locations (it can't compute its shared order-of-magnitude/offset).
+    # Pass only the regular (non-endpoint) ticks: `lo`/`hi` are irregular data values that never
+    # go through `base_formatter` anyway (see `relabel` below), and including them would skew its
+    # shared decimal precision for every other tick too (e.g. "0.10" instead of "0.1" just because
+    # an endpoint like 0.05 needs two decimal places).
+    base_formatter.set_locs(ticks)
+
     def relabel(x, pos=None):
         if any(np.isclose(x, v, rtol=1e-9) for v in (lo, hi)):
             return _format_endpoint(x)

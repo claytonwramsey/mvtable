@@ -2,8 +2,9 @@
 //! dataset (see `crates/mbm-extract`) against `mvtable`, `capt`, and `kiddo`.
 //!
 //! [`sweep_voxel_width`] tries a schedule of candidate widths against a sample of that robot's own
-//! workloads and picks whichever minimizes scalar query time, and that one selected width is then
-//! used to build every `mvtable`/`mvtable_mutable` instance benchmarked for that robot below.
+//! workloads and picks whichever minimizes SIMD (`collides_simd`, lanes=[`SIMD_L`]) query time,
+//! and that one selected width is then used to build every `mvtable`/`mvtable_mutable` instance
+//! benchmarked for that robot below.
 //!
 //! Writes `data/mbm_bench_results.csv`, which `scripts/plot_mbm.py` turns into a throughput
 //! figure, and `data/voxel_width_sweep.csv` (every candidate tried by [`sweep_voxel_width`], per
@@ -45,10 +46,14 @@ const FILTER_NAMES: [&str; 2] = ["centervox", "morton"];
 
 /// Schedule of filter resolutions (voxel size / minimum separation), each a multiple
 /// of a workload's own smallest queried sphere radius `r_min`.
-const FILTER_RADIUS_SCALES: [f32; 5] = [4.0, 8.0, 16.0, 32.0, 64.0];
+const FILTER_RADIUS_SCALES: [f32; 6] = [1.5, 4.0, 8.0, 16.0, 32.0, 64.0];
 
-/// Number of log-spaced voxel-width candidates tried per robot by [`sweep_voxel_width`].
-const N_SWEEP_CANDIDATES: usize = 40;
+/// Number of linearly-spaced voxel-width candidates tried per robot by [`sweep_voxel_width`].
+const N_SWEEP_CANDIDATES: usize = 47;
+
+/// Low/high ends of [`sweep_voxel_width`]'s linear candidate schedule.
+const SWEEP_LO: f32 = 0.04;
+const SWEEP_HI: f32 = 0.5;
 
 /// The (filter, filter-resolution-scale) combo the sweep evaluates candidates against.
 const SWEEP_FILTER: &str = "centervox";
@@ -57,8 +62,8 @@ const SWEEP_SCALE: f32 = 4.0;
 /// Number of scalar queries per workload used to evaluate each sweep candidate.
 const SWEEP_QUERIES_PER_WORKLOAD: usize = 2_000;
 
-/// Floor on the low end of [`sweep_voxel_width`]'s candidate schedule.
-const MIN_VOXEL_WIDTH: f32 = 0.01;
+/// Number of SIMD batches per workload used to evaluate each sweep candidate.
+const SWEEP_BATCHES_PER_WORKLOAD: usize = SWEEP_QUERIES_PER_WORKLOAD / SIMD_L;
 
 #[derive(Clone, Copy)]
 struct Query {
@@ -430,7 +435,7 @@ fn load_workloads(
             let prefix = workload.file_prefix();
             let full_points = read_points(raw_dir.join(format!("{prefix}_points_full.bin")))?;
             let raw_queries = read_queries(raw_dir.join(format!("{prefix}_queries.bin")))?;
-            let r_max = raw_queries.iter().fold(0.0f32, |m, q| m.max(q.r));
+            let r_max = mvtable_bench::mobile_max_radius(&workload.robot);
             let r_min = raw_queries.iter().fold(f32::INFINITY, |m, q| m.min(q.r));
 
             let (all_scalar, all_batches) = split_batches::<SIMD_L>(&raw_queries);
@@ -452,24 +457,19 @@ fn load_workloads(
         .collect()
 }
 
-/// Sweep a log-spaced schedule of [`SWEEP_CANDIDATES`] voxel-width candidates for one robot, plus
-/// `r_max` itself.
+/// Sweep a linearly-spaced schedule of [`N_SWEEP_CANDIDATES`] voxel-width candidates from
+/// [`SWEEP_LO`] to [`SWEEP_HI`] plus this robot's own `r_max` as an
+/// extra, separately-marked candidate.
 fn sweep_voxel_width(
     robot: &str,
     workloads: &[LoadedWorkload],
     sweep_out: &mut impl Write,
 ) -> Result<f32, Box<dyn Error>> {
-    let r_min_global = workloads.iter().fold(f32::INFINITY, |m, w| m.min(w.r_min));
     let r_max_global = workloads.iter().fold(0.0f32, |m, w| m.max(w.r_max));
 
-    let lo = (r_min_global * 0.25).max(MIN_VOXEL_WIDTH).ln();
-    let hi = (r_max_global * 4.0).ln();
-
     println!(
-        "=== {robot}: sweeping voxel width over {N_SWEEP_CANDIDATES} candidates in \
-         [{:.5}, {:.5}] (from observed query radii [{r_min_global:.5}, {r_max_global:.5}]) ===",
-        lo.exp(),
-        hi.exp()
+        "=== {robot}: sweeping voxel width over {N_SWEEP_CANDIDATES} linearly-spaced candidates \
+         in [{SWEEP_LO:.5}, {SWEEP_HI:.5}] (largest-mobile-sphere r_max {r_max_global:.5}) ==="
     );
 
     let candidates: Vec<(f32, bool)> = (0..N_SWEEP_CANDIDATES)
@@ -479,7 +479,7 @@ fn sweep_voxel_width(
                 reason = "SWEEP_CANDIDATES is tiny relative to f32's mantissa"
             )]
             let t = i as f32 / (N_SWEEP_CANDIDATES - 1) as f32;
-            ((lo + (hi - lo) * t).exp(), false)
+            (SWEEP_LO + (SWEEP_HI - SWEEP_LO) * t, false)
         })
         .chain(std::iter::once((r_max_global, true)))
         .collect();
@@ -495,15 +495,18 @@ fn sweep_voxel_width(
             if points.is_empty() {
                 continue;
             }
-            let sample_len = w.scalar_queries.len().min(SWEEP_QUERIES_PER_WORKLOAD);
+            let sample_len = w.simd_batches.len().min(SWEEP_BATCHES_PER_WORKLOAD);
             if sample_len == 0 {
                 continue;
             }
-            let sample: Vec<&Query> = w.scalar_queries[..sample_len].iter().collect();
+            let sample: Vec<_> = w.simd_batches[..sample_len]
+                .iter()
+                .map(batch_to_simd::<SIMD_L>)
+                .collect();
 
             let mvt = mvtable::Mvt::<3, f32>::new(&points, width);
-            total_ns += time_queries(&mvt, &sample).as_secs_f64() * 1e9;
-            total_queries += sample_len;
+            total_ns += time_simd_queries(&mvt, &sample).as_secs_f64() * 1e9;
+            total_queries += sample_len * SIMD_L;
         }
         if total_queries == 0 {
             continue;
