@@ -57,10 +57,10 @@ const R_FILTER_SCALE: f32 = 4.0;
 
 /// Per-robot `mvtable::Mvt`/`MutableMvt` voxel width, tuned by `mbm_bench`'s per-robot
 /// hyperparameter sweep (SIMD `collides_simd` throughput, lanes=8).
-const PANDA_VOXEL_WIDTH: f32 = 0.17324;
-const UR5_VOXEL_WIDTH: f32 = 0.22427;
-const FETCH_VOXEL_WIDTH: f32 = 0.13799;
-const BAXTER_VOXEL_WIDTH: f32 = 0.17075;
+const PANDA_VOXEL_WIDTH: f32 = 0.14;
+const UR5_VOXEL_WIDTH: f32 = 0.19;
+const FETCH_VOXEL_WIDTH: f32 = 0.17;
+const BAXTER_VOXEL_WIDTH: f32 = 0.14;
 
 /// Wall-clock cutoff per (backend, problem) solve attempt, so a pathologically slow combination
 /// can't stall the whole unattended run.
@@ -342,7 +342,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "baxter",
         &Baxter::JOINT_NAMES,
         Isometry3::identity(),
-        (Baxter::MIN_RADIUS, mvtable_bench::mobile_max_radius("baxter")),
+        (
+            Baxter::MIN_RADIUS,
+            mvtable_bench::mobile_max_radius("baxter"),
+        ),
         BAXTER_VOXEL_WIDTH,
         &resources,
         &BAXTER_DATASETS,
