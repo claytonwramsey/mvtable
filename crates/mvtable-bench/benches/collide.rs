@@ -59,22 +59,27 @@ fn bench_construction<S: Structure<3>>(
     }
 }
 
-/// Like [`bench_construction`], but for `mvt_cpp`: not generic over `S: Structure<3>` because it
-/// needs to skip (rather than crash on) any `n` that would overflow the vendored implementation's
-/// fixed-capacity pools - see `mvt_cpp::Overflow`'s doc comment. Probes with one `try_new` call
-/// (dropped immediately) rather than the panicking `Structure::build` used inside the timed loop,
-/// since `criterion`'s `b.iter()` closure has no way to skip a benchmark mid-run.
-fn bench_construction_mvt_cpp(group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>) {
+/// Like [`bench_construction`], but for `mvt_cpp`.
+fn bench_construction_mvt_cpp(
+    group: &mut criterion::BenchmarkGroup<'_, criterion::measurement::WallTime>,
+) {
     let mut rng = SmallRng::seed_from_u64(0);
     for &n in &SIZES {
         let points: Vec<[f32; 3]> = uniform_cloud(&mut rng, n, HALF_WIDTH);
         if mvt_cpp::MvtCpp::try_new(&points, (0.0, R_MAX)).is_err() {
-            eprintln!("skipping mvt_cpp construction bench at n={n}: would overflow its fixed-capacity pools");
+            eprintln!(
+                "skipping mvt_cpp construction bench at n={n}: would overflow its fixed-capacity pools"
+            );
             continue;
         }
         let id = BenchmarkId::new(<mvt_cpp::MvtCpp as Structure<3>>::NAME, n);
         group.bench_with_input(id, &points, |b, points| {
-            b.iter(|| black_box(<mvt_cpp::MvtCpp as Structure<3>>::build(points, (0.0, R_MAX))));
+            b.iter(|| {
+                black_box(<mvt_cpp::MvtCpp as Structure<3>>::build(
+                    points,
+                    (0.0, R_MAX),
+                ))
+            });
         });
     }
 }
@@ -200,12 +205,11 @@ fn bench_scalar_query(
             });
         });
 
-        let mvt_cpp_instance = match mvt_cpp::MvtCpp::try_new(&points, (0.0, R_MAX)) {
-            Ok(instance) => instance,
-            Err(mvt_cpp::Overflow) => {
-                eprintln!("skipping mvt_cpp scalar query bench at n={n}: would overflow its fixed-capacity pools");
-                continue;
-            }
+        let Ok(mvt_cpp_instance) = mvt_cpp::MvtCpp::try_new(&points, (0.0, R_MAX)) else {
+            eprintln!(
+                "skipping mvt_cpp scalar query bench at n={n}: would overflow its fixed-capacity pools"
+            );
+            continue;
         };
         let id = BenchmarkId::new(format!("mvt_cpp_scalar/{trace_name}"), n);
         group.bench_with_input(id, &queries, |b, queries| {
@@ -306,21 +310,25 @@ fn bench_simd_query_mvt_cpp(
     let mut rng = SmallRng::seed_from_u64(1);
     for &n in &SIZES {
         let points: Vec<[f32; 3]> = uniform_cloud(&mut rng, n, HALF_WIDTH);
-        let mvt_cpp_instance = match mvt_cpp::MvtCpp::try_new(&points, (0.0, R_MAX)) {
-            Ok(instance) => instance,
-            Err(mvt_cpp::Overflow) => {
-                eprintln!("skipping mvt_cpp SIMD query bench at n={n}: would overflow its fixed-capacity pools");
-                continue;
-            }
+        let Ok(mvt_cpp_instance) = mvt_cpp::MvtCpp::try_new(&points, (0.0, R_MAX)) else {
+            eprintln!("skipping mvt_cpp SIMD query bench at n={n}: would overflow");
+            continue;
         };
         let queries = trace_of(&points, &mut rng);
         let batches = to_simd_batches::<{ mvt_cpp::SIMD_WIDTH }>(&queries);
 
-        let id = BenchmarkId::new(format!("mvt_cpp_simd_l{}/{trace_name}", mvt_cpp::SIMD_WIDTH), n);
+        let id = BenchmarkId::new(
+            format!("mvt_cpp_simd_l{}/{trace_name}", mvt_cpp::SIMD_WIDTH),
+            n,
+        );
         group.bench_with_input(id, &batches, |b, batches| {
             b.iter(|| {
                 for (centers, radii) in batches {
-                    black_box(SimdStructure::collides_simd(&mvt_cpp_instance, centers, *radii));
+                    black_box(SimdStructure::collides_simd(
+                        &mvt_cpp_instance,
+                        centers,
+                        *radii,
+                    ));
                 }
             });
         });

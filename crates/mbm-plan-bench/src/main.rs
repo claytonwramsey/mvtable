@@ -99,15 +99,9 @@ where
     R: Robot<N, f32> + BlockValidate<N, f32, W> + Clone,
 {
     let tic = Instant::now();
-    let structure = match builder(filtered_points, r_range) {
-        Ok(structure) => structure,
-        Err(e) => {
-            eprintln!(
-                "  {name}: skipping {robot_name}/{dataset}#{}: {e}",
-                problem.id
-            );
-            return Ok(());
-        }
+    let Ok(structure) = builder(filtered_points, r_range) else {
+        eprintln!("  {name}: skipping {robot_name}/{dataset}#{}", problem.id);
+        return Ok(());
     };
     let construction_secs = tic.elapsed().as_secs_f64();
 
@@ -156,6 +150,7 @@ fn run_robot<R, const N: usize>(
     joint_names: &[&str; N],
     tf: Isometry3<f32>,
     r_range: (f32, f32),
+    mvt_cpp_r_range: (f32, f32),
     voxel_width: f32,
     resources: &Path,
     datasets: &[&str],
@@ -237,7 +232,7 @@ where
                 dataset,
                 problem,
                 &filtered_points,
-                r_range,
+                mvt_cpp_r_range,
                 r_filter,
                 "mvtable_cpp",
                 |pc, r_range| {
@@ -301,7 +296,7 @@ where
                 dataset,
                 problem,
                 &filtered_points,
-                r_range,
+                mvt_cpp_r_range,
                 r_filter,
                 "mvt_cpp_simd",
                 |pc, r_range| {
@@ -353,6 +348,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         &Panda::JOINT_NAMES,
         Isometry3::identity(),
         (Panda::MIN_RADIUS, mvtable_bench::mobile_max_radius("panda")),
+        (
+            Panda::MIN_RADIUS,
+            mvtable_bench::true_max_query_radius("panda"),
+        ),
         PANDA_VOXEL_WIDTH,
         &resources,
         &DATASETS,
@@ -367,6 +366,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Vector3::new(0.0, 0.0, -1.57),
         ),
         (Ur5::MIN_RADIUS, mvtable_bench::mobile_max_radius("ur5")),
+        (Ur5::MIN_RADIUS, mvtable_bench::true_max_query_radius("ur5")),
         UR5_VOXEL_WIDTH,
         &resources,
         &DATASETS,
@@ -378,6 +378,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         &Fetch::JOINT_NAMES,
         Isometry3::identity(),
         (Fetch::MIN_RADIUS, mvtable_bench::mobile_max_radius("fetch")),
+        (
+            Fetch::MIN_RADIUS,
+            mvtable_bench::true_max_query_radius("fetch"),
+        ),
         FETCH_VOXEL_WIDTH,
         &resources,
         &DATASETS,
@@ -391,6 +395,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         (
             Baxter::MIN_RADIUS,
             mvtable_bench::mobile_max_radius("baxter"),
+        ),
+        (
+            Baxter::MIN_RADIUS,
+            mvtable_bench::true_max_query_radius("baxter"),
         ),
         BAXTER_VOXEL_WIDTH,
         &resources,

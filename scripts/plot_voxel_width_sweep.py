@@ -48,7 +48,7 @@ def main() -> None:
         swept = sub[sub.is_r_max == 0].sort_values("voxel_width_cm")
         r_max_row = sub[sub.is_r_max == 1]
 
-        min_row = sub[sub["ns_per_query"] == sub["ns_per_query"].min()]
+        min_row = sub.loc[sub["ns_per_query"].idxmin()]
         print(
             f"best width for {robot} is {float(min_row.voxel_width)} ({float(min_row.ns_per_query)} ns/q)"
         )

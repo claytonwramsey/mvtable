@@ -418,6 +418,7 @@ struct LoadedWorkload {
     full_points: Vec<[f32; 3]>,
     r_min: f32,
     r_max: f32,
+    mvt_cpp_r_max: f32,
     scalar_queries: Vec<Query>,
     simd_batches: Vec<[Query; SIMD_L]>,
 }
@@ -436,6 +437,7 @@ fn load_workloads(
             let full_points = read_points(raw_dir.join(format!("{prefix}_points_full.bin")))?;
             let raw_queries = read_queries(raw_dir.join(format!("{prefix}_queries.bin")))?;
             let r_max = mvtable_bench::mobile_max_radius(&workload.robot);
+            let mvt_cpp_r_max = mvtable_bench::true_max_query_radius(&workload.robot);
             let r_min = raw_queries.iter().fold(f32::INFINITY, |m, q| m.min(q.r));
 
             let (all_scalar, all_batches) = split_batches::<SIMD_L>(&raw_queries);
@@ -450,6 +452,7 @@ fn load_workloads(
                 full_points,
                 r_min,
                 r_max,
+                mvt_cpp_r_max,
                 scalar_queries,
                 simd_batches,
             })
@@ -469,7 +472,7 @@ fn sweep_voxel_width(
 
     println!(
         "=== {robot}: sweeping voxel width over {N_SWEEP_CANDIDATES} linearly-spaced candidates \
-         in [{SWEEP_LO:.5}, {SWEEP_HI:.5}] (largest-mobile-sphere r_max {r_max_global:.5}) ==="
+         in [{SWEEP_LO:.5}, {SWEEP_HI:.5}] (mobile max radius r_max {r_max_global:.5}) ==="
     );
 
     let candidates: Vec<(f32, bool)> = (0..N_SWEEP_CANDIDATES)
@@ -574,6 +577,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             let r_min = w.r_min;
             let r_max = w.r_max;
             let r_range = (r_min, r_max);
+            let mvt_cpp_r_range = (r_min, w.mvt_cpp_r_max);
             let scalar_queries = &w.scalar_queries;
             let simd_batches = &w.simd_batches;
 
@@ -722,43 +726,44 @@ fn main() -> Result<(), Box<dyn Error>> {
                     // mvt-cpp
                     let tic = Instant::now();
                     // skip instances that would crash
-                    match mvt_cpp::MvtCpp::try_new(&points, r_range) {
-                        Err(mvt_cpp::Overflow) => {
+                    'mvt_cpp: {
+                        let Ok(mvt_cpp_instance) =
+                            mvt_cpp::MvtCpp::try_new(&points, mvt_cpp_r_range)
+                        else {
                             eprintln!(
                                 "skipping mvt_cpp for {label} [{filter_name} x{scale}] @ \
-                                 {n_points} points: would overflow its fixed-capacity pools"
+                                 {n_points} points: would overflow"
                             );
-                        }
-                        Ok(mvt_cpp_instance) => {
-                            let ctx = RowContext {
-                                structure: "mvt_cpp",
-                                ..ctx
-                            };
-                            write_construction_row(
-                                &mut out,
-                                ctx,
-                                n_queries,
-                                tic.elapsed().as_secs_f64() * 1e9,
-                            )?;
-                            write_memory_row(&mut out, ctx, mvt_cpp_instance.memory_used())?;
-                            bench_scalar(
+                            break 'mvt_cpp;
+                        };
+                        let ctx = RowContext {
+                            structure: "mvt_cpp",
+                            ..ctx
+                        };
+                        write_construction_row(
+                            &mut out,
+                            ctx,
+                            n_queries,
+                            tic.elapsed().as_secs_f64() * 1e9,
+                        )?;
+                        write_memory_row(&mut out, ctx, mvt_cpp_instance.memory_used())?;
+                        bench_scalar(
+                            &mut out,
+                            ctx,
+                            &mvt_cpp_instance,
+                            scalar_queries,
+                            &colliding,
+                            &non_colliding,
+                        )?;
+                        if !simd_batches.is_empty() && mvt_cpp::SIMD_WIDTH == SIMD_L {
+                            bench_simd(
                                 &mut out,
                                 ctx,
                                 &mvt_cpp_instance,
-                                scalar_queries,
-                                &colliding,
-                                &non_colliding,
+                                simd_batches,
+                                &batch_colliding,
+                                &batch_non_colliding,
                             )?;
-                            if !simd_batches.is_empty() && mvt_cpp::SIMD_WIDTH == SIMD_L {
-                                bench_simd(
-                                    &mut out,
-                                    ctx,
-                                    &mvt_cpp_instance,
-                                    simd_batches,
-                                    &batch_colliding,
-                                    &batch_non_colliding,
-                                )?;
-                            }
                         }
                     }
 

@@ -15,7 +15,8 @@ use rand::{Rng, RngExt};
 
 pub mod filter;
 
-/// Radius of a robot's largest sphere that actually moves during planning.
+/// Radius of a robot's largest sphere that actually moves during planning, traced by hand from
+/// each robot's spherized URDF.
 pub fn mobile_max_radius(robot: &str) -> f32 {
     match robot {
         "panda" => 0.06,
@@ -23,6 +24,17 @@ pub fn mobile_max_radius(robot: &str) -> f32 {
         "fetch" => 0.15,
         "baxter" => 0.1,
         _ => panic!("no largest-mobile-sphere radius recorded for robot {robot:?}"),
+    }
+}
+
+/// The true maximum collision-query radius `carom`'s generated `fkcc` ever issues for this robot.
+pub fn true_max_query_radius(robot: &str) -> f32 {
+    match robot {
+        "panda" => 0.22,
+        "ur5" => 0.35,
+        "fetch" => 0.42,
+        "baxter" => 0.6,
+        _ => panic!("no true max query radius recorded for robot {robot:?}"),
     }
 }
 
