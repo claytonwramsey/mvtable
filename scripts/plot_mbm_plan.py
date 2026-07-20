@@ -19,7 +19,14 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
-from mbm_common import ROBOT_LABELS, lighten, save_figure, trim_spines_to_data
+from mbm_common import (
+    ROBOT_LABELS,
+    STRUCTURE_COLORS,
+    YLABEL_PAD,
+    lighten,
+    save_figure,
+    trim_spines_to_data,
+)
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 RESULTS = ROOT / "data" / "mbm_plan_results.csv"
@@ -35,16 +42,19 @@ ALL_STRUCTURES = [
     "capt_simd",
     "kiddo",
 ]
+# `mbm_plan_results.csv` names the C++ port "mvtable_cpp" (`mbm_bench_results.csv`, read by
+# plot_mbm.py, calls the same structure "mvt_cpp") - same shared `STRUCTURE_COLORS` color, just
+# re-keyed to match this file's own naming.
 COLORS = {
-    "mvtable": "#0072B2",
-    "mvtable_simd": lighten("#0072B2"),
-    "mvtable_mutable": "#D55E00",
-    "mvtable_mutable_simd": lighten("#D55E00"),
-    "mvtable_cpp": "#CC79A7",
-    "mvt_cpp_simd": lighten("#CC79A7"),
-    "capt": "#009E73",
-    "capt_simd": lighten("#009E73"),
-    "kiddo": "#E69F00",
+    "mvtable": STRUCTURE_COLORS["mvtable"],
+    "mvtable_simd": lighten(STRUCTURE_COLORS["mvtable"]),
+    "mvtable_mutable": STRUCTURE_COLORS["mvtable_mutable"],
+    "mvtable_mutable_simd": lighten(STRUCTURE_COLORS["mvtable_mutable"]),
+    "mvtable_cpp": STRUCTURE_COLORS["mvt_cpp"],
+    "mvt_cpp_simd": lighten(STRUCTURE_COLORS["mvt_cpp"]),
+    "capt": STRUCTURE_COLORS["capt"],
+    "capt_simd": lighten(STRUCTURE_COLORS["capt"]),
+    "kiddo": STRUCTURE_COLORS["kiddo"],
 }
 LABELS = {
     "mvtable": "MVT",
@@ -127,7 +137,7 @@ def plot_solve_time_violins(
         log_scale=True,
         width=0.9,
     )
-    ax.set_ylabel("Solve Time (Milliseconds)")
+    ax.set_ylabel("Solve Time (Milliseconds)", labelpad=YLABEL_PAD)
     ax.set_xlabel("")
     ax.set_xticks(range(len(robots)), [ROBOT_LABELS[r] for r in robots])
     ax.tick_params(axis="x", bottom=False, pad=2)

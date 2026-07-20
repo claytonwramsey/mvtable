@@ -44,9 +44,26 @@ const SIMD_L: usize = 8;
 /// Filters compared, by name; see [`apply_filter`].
 const FILTER_NAMES: [&str; 2] = ["centervox", "morton"];
 
-/// Schedule of filter resolutions (voxel size / minimum separation), each a multiple
-/// of a workload's own smallest queried sphere radius `r_min`.
-const FILTER_RADIUS_SCALES: [f32; 6] = [1.5, 4.0, 8.0, 16.0, 32.0, 64.0];
+/// Number of filter-resolution-scale steps in [`filter_radius_scale_schedule`].
+const N_FILTER_SCALES: usize = 24;
+
+/// Low/high ends of [`filter_radius_scale_schedule`]'s schedule of filter resolutions.
+const FILTER_SCALE_LO: f32 = 1.5;
+const FILTER_SCALE_HI: f32 = 64.0;
+
+/// A schedule of [`N_FILTER_SCALES`] filter-resolution-scale candidates from [`FILTER_SCALE_LO`]
+/// to [`FILTER_SCALE_HI`], spaced so the resulting point counts land roughly evenly across their
+/// range.
+fn filter_radius_scale_schedule() -> [f32; N_FILTER_SCALES] {
+    let u_lo = 1.0 / FILTER_SCALE_LO.powi(2);
+    let u_hi = 1.0 / FILTER_SCALE_HI.powi(2);
+    std::array::from_fn(|i| {
+        #[expect(clippy::cast_precision_loss)]
+        let t = i as f32 / (N_FILTER_SCALES - 1) as f32;
+        let u = u_lo + (u_hi - u_lo) * t;
+        1.0 / u.sqrt()
+    })
+}
 
 /// Number of linearly-spaced voxel-width candidates tried per robot by [`sweep_voxel_width`].
 const N_SWEEP_CANDIDATES: usize = 47;
@@ -566,6 +583,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         by_robot.entry(&w.robot).or_default().push(w);
     }
 
+    let filter_radius_scales = filter_radius_scale_schedule();
+
     for robot in &robot_order {
         let loaded = load_workloads(&raw_dir, &by_robot[robot.as_str()])
             .inspect_err(|_| eprintln!("Missing workload file for {robot}!"))?;
@@ -582,7 +601,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             let simd_batches = &w.simd_batches;
 
             for &filter_name in &FILTER_NAMES {
-                for &scale in &FILTER_RADIUS_SCALES {
+                for &scale in &filter_radius_scales {
                     let points = apply_filter(filter_name, full_points, scale * r_min);
                     let n_points = points.len();
                     if n_points == 0 {

@@ -12,27 +12,19 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
-import seaborn as sns
 from matplotlib.ticker import FuncFormatter
-from mbm_common import ROBOT_LABELS, save_figure, trim_spines_to_data
+from mbm_common import (
+    ROBOT_COLORS,
+    ROBOT_LABELS,
+    YLABEL_PAD,
+    finish_single_panel,
+    save_figure,
+    style_legend,
+)
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 RESULTS = ROOT / "data" / "voxel_width_sweep.csv"
 OUT = ROOT / "doc" / "voxel_width_sweep.svg"
-
-# Negative labelpad, pulled in from matplotlib's default (4pt) so the y-axis label sits closer to
-# the tick numbers instead of leaving a wide gap of unused margin to its left - see plot_mbm.py's
-# YLABEL_PAD, which this matches.
-YLABEL_PAD = -8
-
-# Okabe-Ito colorblind-safe palette, one color per robot (distinct from the structure colors used
-# in plot_mbm.py, since this plot's series are robots, not structures).
-ROBOT_COLORS = {
-    "panda": "#0072B2",
-    "ur5": "#009E73",
-    "fetch": "#D55E00",
-    "baxter": "#CC79A7",
-}
 
 
 def main() -> None:
@@ -73,9 +65,6 @@ def main() -> None:
                 label=f"{label} (r_max)",
             )
 
-    # ax.set_xscale("log")
-    # ax.set_yscale("log")
-    ax.set_xlabel("Voxel width (cm)")
     ax.set_ylabel("Average query time (ns)", labelpad=YLABEL_PAD)
 
     # De-duplicate the legend so each robot shows one line-color swatch and the circle marker is
@@ -84,14 +73,9 @@ def main() -> None:
     r_max_handle = next(h for h, l in zip(handles, labels) if l.endswith("(r_max)"))
     line_handles = [h for h, l in zip(handles, labels) if not l.endswith("(r_max)")]
     line_labels = [l for l in labels if not l.endswith("(r_max)")]
-    ax.legend(
-        [*line_handles, r_max_handle],
-        [*line_labels, "$r_\\text{max}$"],
-        frameon=False,
-    )
 
-    sns.despine(ax=ax)
-    trim_spines_to_data(ax)
+    finish_single_panel(ax, "Voxel width (cm)", yscale="linear")
+    style_legend(ax, [*line_handles, r_max_handle], [*line_labels, "$r_\\text{max}$"])
     thin_tick_labels(ax.yaxis)
     fig.tight_layout()
     save_figure(fig, OUT)

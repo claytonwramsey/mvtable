@@ -4,9 +4,10 @@ import pathlib
 
 import numpy as np
 import pandas as pd
+import seaborn as sns
 from matplotlib import patheffects
 from matplotlib.category import StrCategoryLocator
-from matplotlib.colors import LinearSegmentedColormap, to_rgb
+from matplotlib.colors import to_rgb
 from matplotlib.ticker import FixedLocator, FuncFormatter
 
 # Locator types that mean "this axis has category positions, not numeric ones": `FixedLocator`
@@ -23,6 +24,48 @@ ROBOT_LABELS = {
     "fetch": "Fetch",
     "baxter": "Baxter",
 }
+
+# Canonical structure -> color, shared by every script that plots more than one structure
+# (`plot_mbm.py`, `plot_baxter_solve_time.py`, `plot_mbm_plan.py`). Keyed by the `mvtable`-style
+# structure names `mbm_bench` writes; scripts reading `mbm_plan_results.csv`'s slightly different
+# names (e.g. `mvtable_cpp` instead of `mvt_cpp`) look up the same underlying color by the
+# `mbm_bench` key and re-key it locally.
+#
+# `mvtable`/`mvtable_mutable` are the site's own `--bh-blue`/`--bh-red` (see `main.css`) - the two
+# most prominent series get the two colors a reader already associates with this site. The other
+# three keep their original Okabe-Ito colorblind-safe values rather than being reinvented in a
+# site-branded color: Okabe-Ito was already vivid and well-tested, and re-deriving a whole new set
+# of secondary colors (an earlier version of this palette tried pulling from the syntax-highlight
+# palette in `code-light.css`) produced muddier, less legible lines for no real benefit. Checked
+# with `colorspacious` (simulated deuteranomaly/protanomaly/tritanomaly, full severity): every
+# pair below clears deltaE >= 17, edging out Okabe-Ito's own worst-case pairwise separation (~16).
+STRUCTURE_COLORS = {
+    "mvtable": "#3F51B5",  # site --bh-blue
+    "mvtable_mutable": "#E03C31",  # site --bh-red
+    "capt": "#009E73",  # Okabe-Ito bluish green
+    "kiddo": "#E69F00",  # Okabe-Ito orange
+    "mvt_cpp": "#CC79A7",  # Okabe-Ito reddish purple
+}
+
+# Canonical robot -> color, used only by `plot_voxel_width_sweep.py`. Deliberately a *different*
+# set of hues from STRUCTURE_COLORS, not a reuse of any of them: robots and collision-checking
+# structures are unrelated categorical dimensions that never appear in the same figure, but a
+# reader who's learned "blue = mvtable" from the throughput figures shouldn't then see a similar
+# blue for "panda" here and wonder if it's related. Checked the same way as STRUCTURE_COLORS:
+# every pair here clears CVD deltaE >= 26 internally, and every color clears normal-vision deltaE
+# >= 27 from every STRUCTURE_COLORS entry (no near-duplicate hue to cause that habit confusion).
+ROBOT_COLORS = {
+    "panda": "#00A8C6",  # cyan
+    "ur5": "#8B5A2B",  # brown
+    "fetch": "#5B2873",  # violet
+    "baxter": "#AEA02C",  # gold/olive
+}
+
+# Negative labelpad on every panel's y-axis label, pulled in from matplotlib's default (4pt) so
+# the label sits closer to the tick numbers rather than leaving a wide gap of unused margin to its
+# left - `fig.tight_layout()` shrinks the figure's left margin to match, so the freed-up space
+# goes to the plot area instead of sitting blank.
+YLABEL_PAD = -8
 
 
 def wrap_tick_label(label: str) -> str:
@@ -175,6 +218,79 @@ def trim_spines_to_data(ax) -> None:
             _label_endpoints(ax.yaxis, y_lo, y_hi)
 
 
+def finish_single_panel(ax, xlabel: str, yscale: str = "log") -> None:
+    """Apply the shared single-panel look used across every plot in this directory: linear x,
+    `sns.despine`, and a Tufte range-frame via `trim_spines_to_data`.
+
+    `yscale` defaults to `"log"` since every time/memory metric plotted in this directory spans a
+    comparable multi-order-of-magnitude range that a linear scale would crush into a sliver at the
+    small end - pass `"linear"` for a metric that doesn't (e.g. `plot_voxel_width_sweep.py`'s
+    query time barely varies across its swept range, well under one decade; log-scale ticks over
+    that narrow a span render as wide "n×10^k" labels rather than plain numbers, which collide
+    with `YLABEL_PAD`'s tightened label margin)."""
+    ax.set_yscale(yscale)
+    ax.set_xlabel(xlabel)
+    sns.despine(ax=ax)
+    trim_spines_to_data(ax)
+
+
+def legend_order(
+    handles, labels, pin_first: str | None = None, fixed_order: list[str] | None = None
+):
+    """Reorder legend entries to match the plotted lines' relative vertical order at the left
+    edge of the plot (where a left-to-right reader looks first), so e.g. the highest series reads
+    first/top in the legend rather than in a fixed structure order.
+
+    `pin_first`, if given, forces that label to the top regardless of its left-edge position -
+    useful when a series starts close to the pack at the smallest x value but consistently leads
+    or trails for nearly the whole plot, so top-of-legend is the more honest read than "whatever's
+    highest at x=0".
+
+    `fixed_order`, if given, replaces height-based ordering entirely with this explicit sequence
+    of labels - useful when the intended reading order doesn't track well enough with the lines'
+    relative height at any single x position to trust automatic ordering. Mutually exclusive with
+    `pin_first`."""
+    if fixed_order is not None:
+        order = sorted(
+            range(len(handles)),
+            key=lambda i: (
+                fixed_order.index(labels[i])
+                if labels[i] in fixed_order
+                else len(fixed_order)
+            ),
+        )
+    else:
+        order = sorted(
+            range(len(handles)), key=lambda i: handles[i].get_ydata()[0], reverse=True
+        )
+        if pin_first is not None:
+            order = sorted(order, key=lambda i: labels[i] != pin_first)
+
+    return [handles[i] for i in order], [labels[i] for i in order]
+
+
+def style_legend(ax, handles, labels, **kwargs):
+    """Draw a legend with the shared look used across every plot in this directory: no frame,
+    tightened handle/label spacing, small font, and line swatches thinned to 1.6pt regardless of
+    the plotted lines' own width (full-thickness swatches read as a stack of fat bars once a
+    legend has more than a couple of rows). Extra `kwargs` (e.g. `loc`, `ncol`, `bbox_to_anchor`)
+    are passed through to `ax.legend`."""
+    legend = ax.legend(
+        handles,
+        labels,
+        frameon=False,
+        handlelength=1.4,
+        handletextpad=0.5,
+        labelspacing=0.35,
+        fontsize=9,
+        **kwargs,
+    )
+    for handle in legend.legend_handles:
+        if hasattr(handle, "set_linewidth"):
+            handle.set_linewidth(1.6)
+    return legend
+
+
 def geomean(x: pd.Series) -> float:
     """The geometric mean of the positive values in `x`, `nan` if there are none."""
     x = x[np.isfinite(x) & (x > 0)]
@@ -187,44 +303,8 @@ def lighten(color: str, amount: float = 0.55) -> tuple:
     return (r + (1 - r) * amount, g + (1 - g) * amount, b + (1 - b) * amount)
 
 
-def density_cmap(color) -> LinearSegmentedColormap:
-    r, g, b = to_rgb(color)
-    return LinearSegmentedColormap.from_list(
-        "density", [(r, g, b, 0.0), (r, g, b, 1.0)]
-    )
-
-
-def density_hexbin(
-    ax, x: pd.Series, y: pd.Series, color, extent, log: bool = True
-) -> None:
-    """A density heatmap of `(x, y)` in `color`, faded by point density so overlapping series
-    stay visually distinguishable rather than fully occluding each other.
-
-    `extent` is always given in raw data units (matching `ax.set_xlim`/`set_ylim`); when
-    `log=True` it's converted to the log10-space `hexbin` itself expects for a log `xscale`/
-    `yscale` (passing raw units there silently produces nonsensical bins spanning many decades
-    beyond the actual data, an easy mistake since every other matplotlib API takes raw units).
-    """
-    scale = "log" if log else "linear"
-    if log:
-        x_lo, x_hi, y_lo, y_hi = extent
-        extent = (np.log10(x_lo), np.log10(x_hi), np.log10(y_lo), np.log10(y_hi))
-    ax.hexbin(
-        x,
-        y,
-        gridsize=22,
-        cmap=density_cmap(color),
-        mincnt=1,
-        linewidths=0.0,
-        bins="log",
-        xscale=scale,
-        yscale=scale,
-        extent=extent,
-    )
-
-
-# Number of quantile bins to plot.
-N_QUANTILE_BINS = 10
+# Number of linear bins to plot.
+N_LINEAR_BINS = 20
 
 
 def binned_line(
@@ -236,12 +316,13 @@ def binned_line(
     annotate: bool = True,
     label: str | None = None,
 ) -> None:
-    """Plot a quantile-binned geometric-mean trend line of `y` against `x`, annotated with each
-    bin's sample count."""
-    n_bins = min(N_QUANTILE_BINS, x.nunique())
+    """Plot a linearly-binned geometric-mean trend line of `y` against `x` (equal-width bins
+    spanning `x`'s range, matching the linear x-axis these panels use), annotated with each bin's
+    sample count."""
+    n_bins = min(N_LINEAR_BINS, x.nunique())
     if n_bins < 2:
         return
-    bin_id = pd.qcut(x, n_bins, duplicates="drop")
+    bin_id = pd.cut(x, n_bins, duplicates="drop")
     grouped = y.groupby(bin_id, observed=True)
     xs = x.groupby(bin_id, observed=True).median()
     ys = grouped.apply(geomean)
