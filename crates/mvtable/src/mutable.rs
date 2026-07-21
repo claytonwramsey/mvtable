@@ -495,14 +495,8 @@ impl<const K: usize, A: Axis, I: Index> MutableMvt<K, A, I> {
         }
         self.search_block(center, r, |voxel| {
             let count = voxel.count();
-            (0..count).any(|i| {
-                let mut distsq = A::ZERO;
-                for (k, &c) in center.iter().enumerate() {
-                    let diff = voxel.axes[k][i] - c;
-                    distsq = distsq + diff.square();
-                }
-                distsq <= rsq
-            })
+            let axes: [&[A]; K] = array::from_fn(|k| &voxel.axes[k][..count]);
+            crate::scan_block::<A, K, { crate::SCAN_BLOCK }>(&axes, center, rsq)
         })
     }
 
