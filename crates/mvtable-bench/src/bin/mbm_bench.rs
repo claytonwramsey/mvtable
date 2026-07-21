@@ -45,23 +45,29 @@ const SIMD_L: usize = 8;
 const FILTER_NAMES: [&str; 2] = ["centervox", "morton"];
 
 /// Number of filter-resolution-scale steps in [`filter_radius_scale_schedule`].
-const N_FILTER_SCALES: usize = 24;
+const N_FILTER_SCALES: usize = 16;
 
-/// Low/high ends of [`filter_radius_scale_schedule`]'s schedule of filter resolutions.
-const FILTER_SCALE_LO: f32 = 1.5;
-const FILTER_SCALE_HI: f32 = 64.0;
+const N_POINTS_LO: usize = 1000;
+const N_POINTS_HI: usize = 50_000;
+
+/// Regression coefficients for a power law relating filter scale to the resulting point-cloud
+/// size.
+const FILTER_SCALE_LOG_INTERCEPT: f32 = 10.8346;
+const FILTER_SCALE_LOG_SLOPE: f32 = -2.1464;
+
+/// The filter `scale` predicted to yield a given `n_points`.
+fn scale_for_n_points(n_points: f32) -> f32 {
+    ((n_points.ln() - FILTER_SCALE_LOG_INTERCEPT) / FILTER_SCALE_LOG_SLOPE).exp()
+}
 
 /// A schedule of [`N_FILTER_SCALES`] filter-resolution-scale candidates from [`FILTER_SCALE_LO`]
-/// to [`FILTER_SCALE_HI`], spaced so the resulting point counts land roughly evenly across their
-/// range.
+/// to [`FILTER_SCALE_HI`].
 fn filter_radius_scale_schedule() -> [f32; N_FILTER_SCALES] {
-    let u_lo = 1.0 / FILTER_SCALE_LO.powi(2);
-    let u_hi = 1.0 / FILTER_SCALE_HI.powi(2);
     std::array::from_fn(|i| {
-        #[expect(clippy::cast_precision_loss)]
+        #[expect(clippy::cast_precision_loss, reason = "N_FILTER_SCALES is tiny")]
         let t = i as f32 / (N_FILTER_SCALES - 1) as f32;
-        let u = u_lo + (u_hi - u_lo) * t;
-        1.0 / u.sqrt()
+        let target_n = (N_POINTS_LO + (N_POINTS_HI - N_POINTS_LO)) as f32 * t;
+        scale_for_n_points(target_n)
     })
 }
 
