@@ -47,18 +47,14 @@ STRUCTURE_COLORS = {
     "mvt_cpp": "#CC79A7",  # Okabe-Ito reddish purple
 }
 
-# Canonical robot -> color, used only by `plot_voxel_width_sweep.py`. Deliberately a *different*
-# set of hues from STRUCTURE_COLORS, not a reuse of any of them: robots and collision-checking
-# structures are unrelated categorical dimensions that never appear in the same figure, but a
-# reader who's learned "blue = mvtable" from the throughput figures shouldn't then see a similar
-# blue for "panda" here and wonder if it's related. Checked the same way as STRUCTURE_COLORS:
-# every pair here clears CVD deltaE >= 26 internally, and every color clears normal-vision deltaE
-# >= 27 from every STRUCTURE_COLORS entry (no near-duplicate hue to cause that habit confusion).
+# Canonical robot -> color, used only by `plot_voxel_width_sweep.py`. Plain matplotlib default
+# ("Tableau"/tab10) palette colors, one per robot - no hand-picked hues here, unlike
+# STRUCTURE_COLORS.
 ROBOT_COLORS = {
-    "panda": "#00A8C6",  # cyan
-    "ur5": "#8B5A2B",  # brown
-    "fetch": "#5B2873",  # violet
-    "baxter": "#AEA02C",  # gold/olive
+    "panda": "#1f77b4",  # tab:blue
+    "ur5": "#ff7f0e",  # tab:orange
+    "fetch": "#2ca02c",  # tab:green
+    "baxter": "#d62728",  # tab:red
 }
 
 # Negative labelpad on every panel's y-axis label, pulled in from matplotlib's default (4pt) so

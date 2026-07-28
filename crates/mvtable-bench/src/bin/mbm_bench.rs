@@ -74,9 +74,12 @@ fn filter_radius_scale_schedule() -> [f32; N_FILTER_SCALES] {
 /// Number of linearly-spaced voxel-width candidates tried per robot by [`sweep_voxel_width`].
 const N_SWEEP_CANDIDATES: usize = 47;
 
-/// Low/high ends of [`sweep_voxel_width`]'s linear candidate schedule.
+/// Low/high ends of [`sweep_voxel_width`]'s linear candidate schedule. `SWEEP_HI` covers every
+/// robot's `true_max_query_radius` (the largest, Baxter's, is 0.6) so that candidate is reached
+/// by the ordinary linearly-spaced schedule instead of appearing as an isolated, far-off point
+/// disconnected from the rest of the curve.
 const SWEEP_LO: f32 = 0.04;
-const SWEEP_HI: f32 = 0.5;
+const SWEEP_HI: f32 = 0.6;
 
 /// The (filter, filter-resolution-scale) combo the sweep evaluates candidates against.
 const SWEEP_FILTER: &str = "centervox";
@@ -440,8 +443,12 @@ struct LoadedWorkload {
     label: String,
     full_points: Vec<[f32; 3]>,
     r_min: f32,
-    r_max: f32,
-    mvt_cpp_r_max: f32,
+    /// Radius of the largest sphere on a mobile joint of the robot.
+    r_max_mobile: f32,
+    /// Radius of the largest sphere on the robot.
+    r_max_robot: f32,
+    /// Radius of the largest query sphere (includes BVH spheres).
+    r_max_query: f32,
     scalar_queries: Vec<Query>,
     simd_batches: Vec<[Query; SIMD_L]>,
 }
@@ -459,8 +466,9 @@ fn load_workloads(
             let prefix = workload.file_prefix();
             let full_points = read_points(raw_dir.join(format!("{prefix}_points_full.bin")))?;
             let raw_queries = read_queries(raw_dir.join(format!("{prefix}_queries.bin")))?;
-            let r_max = mvtable_bench::mobile_max_radius(&workload.robot);
-            let mvt_cpp_r_max = mvtable_bench::true_max_query_radius(&workload.robot);
+            let r_max_mobile = mvtable_bench::mobile_max_radius(&workload.robot);
+            let r_max_robot = mvtable_bench::robot_max_radius(&workload.robot);
+            let r_max_query = mvtable_bench::true_max_query_radius(&workload.robot);
             let r_min = raw_queries.iter().fold(f32::INFINITY, |m, q| m.min(q.r));
 
             let (all_scalar, all_batches) = split_batches::<SIMD_L>(&raw_queries);
@@ -474,8 +482,9 @@ fn load_workloads(
                 label: workload.label(),
                 full_points,
                 r_min,
-                r_max,
-                mvt_cpp_r_max,
+                r_max_mobile,
+                r_max_robot,
+                r_max_query,
                 scalar_queries,
                 simd_batches,
             })
@@ -483,37 +492,77 @@ fn load_workloads(
         .collect()
 }
 
+/// Which of the two robot-specific extra candidates (if any) a sweep row corresponds to; see
+/// [`sweep_voxel_width`].
+enum SweepMarker {
+    /// One of the [`N_SWEEP_CANDIDATES`] linearly-spaced candidates.
+    None,
+    /// This robot's `mobile_max_radius` (the largest sphere that actually moves during
+    /// planning).
+    MobileMax,
+    /// The maximum radius of any sphere on the robot, including immobile links.
+    MaxRobot,
+    /// This robot's `true_max_query_radius` (the largest radius `carom`'s `fkcc` ever issues,
+    /// covering static as well as mobile spheres).
+    MaxQuery,
+}
+
+impl SweepMarker {
+    const fn csv_value(&self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::MobileMax => "mobile_max",
+            Self::MaxRobot => "robot_max",
+            Self::MaxQuery => "query_max",
+        }
+    }
+
+    const fn log_tag(&self) -> &'static str {
+        match self {
+            Self::None => "",
+            Self::MobileMax => " (mobile_max)",
+            Self::MaxRobot => " (robot_max)",
+            Self::MaxQuery => " (query_max)",
+        }
+    }
+}
+
 /// Sweep a linearly-spaced schedule of [`N_SWEEP_CANDIDATES`] voxel-width candidates from
-/// [`SWEEP_LO`] to [`SWEEP_HI`] plus this robot's own `r_max` as an
-/// extra, separately-marked candidate.
+/// [`SWEEP_LO`] to [`SWEEP_HI`] plus this robot's own `mobile_max_radius` and
+/// `true_max_query_radius` as two extra, separately-marked candidates.
 fn sweep_voxel_width(
     robot: &str,
     workloads: &[LoadedWorkload],
     sweep_out: &mut impl Write,
 ) -> Result<f32, Box<dyn Error>> {
-    let r_max_global = workloads.iter().fold(0.0f32, |m, w| m.max(w.r_max));
+    let mobile_max_global = workloads.iter().fold(0.0f32, |m, w| m.max(w.r_max_mobile));
+    let robot_max_global = workloads.iter().fold(0.0f32, |m, w| m.max(w.r_max_robot));
+    let true_max_global = workloads.iter().fold(0.0f32, |m, w| m.max(w.r_max_query));
 
     println!(
         "=== {robot}: sweeping voxel width over {N_SWEEP_CANDIDATES} linearly-spaced candidates \
-         in [{SWEEP_LO:.5}, {SWEEP_HI:.5}] (mobile max radius r_max {r_max_global:.5}) ==="
+         in [{SWEEP_LO:.5}, {SWEEP_HI:.5}] (mobile max radius {mobile_max_global:.5}, true max \
+         radius {true_max_global:.5}) ==="
     );
 
-    let candidates: Vec<(f32, bool)> = (0..N_SWEEP_CANDIDATES)
+    let candidates: Vec<(f32, SweepMarker)> = (0..N_SWEEP_CANDIDATES)
         .map(|i| {
             #[expect(
                 clippy::cast_precision_loss,
                 reason = "SWEEP_CANDIDATES is tiny relative to f32's mantissa"
             )]
             let t = i as f32 / (N_SWEEP_CANDIDATES - 1) as f32;
-            (SWEEP_LO + (SWEEP_HI - SWEEP_LO) * t, false)
+            (SWEEP_LO + (SWEEP_HI - SWEEP_LO) * t, SweepMarker::None)
         })
-        .chain(std::iter::once((r_max_global, true)))
+        .chain(std::iter::once((mobile_max_global, SweepMarker::MobileMax)))
+        .chain(std::iter::once((robot_max_global, SweepMarker::MaxRobot)))
+        .chain(std::iter::once((true_max_global, SweepMarker::MaxQuery)))
         .collect();
 
-    let mut best_width = r_max_global;
+    let mut best_width = mobile_max_global;
     let mut best_mean_ns = f64::INFINITY;
 
-    for (width, is_r_max) in candidates {
+    for (width, marker) in candidates {
         let mut total_ns = 0.0f64;
         let mut total_queries = 0usize;
         for w in workloads {
@@ -538,12 +587,14 @@ fn sweep_voxel_width(
             continue;
         }
         let mean_ns = total_ns / total_queries as f64;
-        let tag = if is_r_max { " (r_max)" } else { "" };
-        println!("  candidate voxel_width={width:.5}{tag}: mean {mean_ns:.2} ns/query");
+        println!(
+            "  candidate voxel_width={width:.5}{}: mean {mean_ns:.2} ns/query",
+            marker.log_tag()
+        );
         writeln!(
             sweep_out,
             "{robot},{width},{mean_ns},{}",
-            u8::from(is_r_max)
+            marker.csv_value()
         )?;
         if mean_ns < best_mean_ns {
             best_mean_ns = mean_ns;
@@ -576,7 +627,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Per-candidate voxel-width sweep results
     let sweep_path = data_dir.join("voxel_width_sweep.csv");
     let mut sweep_out = BufWriter::new(File::create(&sweep_path)?);
-    writeln!(sweep_out, "robot,voxel_width,ns_per_query,is_r_max")?;
+    writeln!(sweep_out, "robot,voxel_width,ns_per_query,marker")?;
 
     // Group workloads by robot, preserving first-appearance order, so `mvtable`'s voxel width can
     // be swept and selected once per robot
@@ -591,18 +642,33 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let filter_radius_scales = filter_radius_scale_schedule();
 
+    // Phase 1: load each robot's workloads and sweep its voxel width. Kept as its own pass
+    // (rather than interleaved per-robot with phase 2 below) so all of `sweep_out` lands on disk
+    // quickly, independent of how long the much slower phase 2 measurement loop takes for
+    // whichever robot runs first - a process killed partway through phase 2 previously lost
+    // every later robot's sweep data along with it, since sweep results were only ever flushed
+    // right before that same robot's slow measurement loop.
+    let mut robot_data: Vec<(&String, Vec<LoadedWorkload>, f32)> = Vec::new();
     for robot in &robot_order {
         let loaded = load_workloads(&raw_dir, &by_robot[robot.as_str()])
             .inspect_err(|_| eprintln!("Missing workload file for {robot}!"))?;
         let voxel_width = sweep_voxel_width(robot, &loaded, &mut sweep_out)?;
+        sweep_out.flush()?;
+        robot_data.push((robot, loaded, voxel_width));
+    }
 
-        for w in &loaded {
+    // Phase 2: the slow per-filter/per-scale measurement loop, using each robot's swept width
+    // from phase 1.
+    for (_robot, loaded, voxel_width) in &robot_data {
+        let voxel_width = *voxel_width;
+
+        for w in loaded {
             let label = &w.label;
             let full_points = &w.full_points;
             let r_min = w.r_min;
-            let r_max = w.r_max;
+            let r_max = w.r_max_mobile;
             let r_range = (r_min, r_max);
-            let mvt_cpp_r_range = (r_min, w.mvt_cpp_r_max);
+            let mvt_cpp_r_range = (r_min, w.r_max_query);
             let scalar_queries = &w.scalar_queries;
             let simd_batches = &w.simd_batches;
 

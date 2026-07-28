@@ -37,8 +37,14 @@ def main() -> None:
     for robot, sub in df.groupby("robot"):
         color = ROBOT_COLORS.get(robot, "#000000")
         label = ROBOT_LABELS.get(robot, robot)
-        swept = sub[sub.is_r_max == 0].sort_values("voxel_width_cm")
-        r_max_row = sub[sub.is_r_max == 1]
+        swept = sub[sub.marker == "none"].sort_values("voxel_width_cm")
+        mobile_max_row = sub[sub.marker == "mobile_max"]
+        query_max_row = sub[sub.marker == "query_max"]
+        robot_max_row = sub[sub.marker == "robot_max"]
+
+        if swept.empty:
+            print(f"warning: no swept voxel-width data for {robot}, skipping")
+            continue
 
         min_row = sub.loc[sub["ns_per_query"].idxmin()]
         print(
@@ -52,30 +58,88 @@ def main() -> None:
             linewidth=2,
             label=label,
         )
-        if not r_max_row.empty:
+        if not mobile_max_row.empty:
             ax.scatter(
-                r_max_row.voxel_width_cm,
-                r_max_row.ns_per_query,
+                mobile_max_row.voxel_width_cm,
+                mobile_max_row.ns_per_query,
                 color=color,
                 marker="o",
-                s=40,
+                s=60,
                 edgecolor="white",
                 linewidth=1.0,
                 zorder=5,
-                label=f"{label} (r_max)",
+                label=f"{label} (mobile_max)",
             )
+        if not robot_max_row.empty:
+            ax.scatter(
+                robot_max_row.voxel_width_cm,
+                robot_max_row.ns_per_query,
+                color=color,
+                marker="s",
+                s=60,
+                edgecolor="white",
+                linewidth=1.0,
+                zorder=5,
+                label=f"{label} (robot_max)",
+            )
+        if not query_max_row.empty:
+            ax.scatter(
+                query_max_row.voxel_width_cm,
+                query_max_row.ns_per_query,
+                color=color,
+                marker="^",
+                s=80,
+                edgecolor="white",
+                linewidth=1.0,
+                zorder=5,
+                label=f"{label} (query_max)",
+            )
+
+    if not ax.get_legend_handles_labels()[0]:
+        print("warning: no voxel-width sweep data for any robot, nothing to plot")
+        plt.close(fig)
+        return
 
     ax.set_ylabel("Average query time (ns)", labelpad=YLABEL_PAD)
 
-    # De-duplicate the legend so each robot shows one line-color swatch and the circle marker is
-    # explained once, rather than once per robot.
+    # De-duplicate the legend so each robot shows one line-color swatch and each marker shape is
+    # explained once, rather than once per robot. Markers use `next(..., None)` since a given
+    # marker kind may not have survived for any robot (e.g. all rows for it were missing or
+    # non-positive), in which case that legend entry is simply omitted rather than crashing.
     handles, labels = ax.get_legend_handles_labels()
-    r_max_handle = next(h for h, l in zip(handles, labels) if l.endswith("(r_max)"))
-    line_handles = [h for h, l in zip(handles, labels) if not l.endswith("(r_max)")]
-    line_labels = [l for l in labels if not l.endswith("(r_max)")]
+    mobile_max_handle = next(
+        (h for h, l in zip(handles, labels) if l.endswith("(mobile_max)")), None
+    )
+    true_max_handle = next(
+        (h for h, l in zip(handles, labels) if l.endswith("(query_max)")), None
+    )
+    robot_max_handle = next(
+        (h for h, l in zip(handles, labels) if l.endswith("(robot_max)")), None
+    )
+    line_handles = [
+        h
+        for h, l in zip(handles, labels)
+        if not l.endswith(("(mobile_max)", "(query_max)", "(robot_max)"))
+    ]
+    line_labels = [
+        l
+        for l in labels
+        if not l.endswith(("(mobile_max)", "(query_max)", "(robot_max)"))
+    ]
+
+    extra_handles, extra_labels = [], []
+    if mobile_max_handle is not None:
+        extra_handles.append(mobile_max_handle)
+        extra_labels.append("Max mobile radius")
+    if robot_max_handle is not None:
+        extra_handles.append(robot_max_handle)
+        extra_labels.append("Max robot radius")
+    if true_max_handle is not None:
+        extra_handles.append(true_max_handle)
+        extra_labels.append("Max query radius")
 
     finish_single_panel(ax, "Voxel width (cm)", yscale="linear")
-    style_legend(ax, [*line_handles, r_max_handle], [*line_labels, "$r_\\text{max}$"])
+    style_legend(ax, [*line_handles, *extra_handles], [*line_labels, *extra_labels])
     thin_tick_labels(ax.yaxis)
     fig.tight_layout()
     save_figure(fig, OUT)

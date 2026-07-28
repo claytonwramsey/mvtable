@@ -27,6 +27,17 @@ pub fn mobile_max_radius(robot: &str) -> f32 {
     }
 }
 
+/// Radius of each robot's largest sphere on any link.
+pub fn robot_max_radius(robot: &str) -> f32 {
+    match robot {
+        "panda" => 0.08,
+        "ur5" => 0.08,
+        "fetch" => 0.24,
+        "baxter" => 0.5,
+        _ => panic!("no largest-mobile-sphere radius recorded for robot {robot:?}"),
+    }
+}
+
 /// The true maximum collision-query radius `carom`'s generated `fkcc` ever issues for this robot.
 pub fn true_max_query_radius(robot: &str) -> f32 {
     match robot {
