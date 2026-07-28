@@ -3,11 +3,14 @@ resolver = "3"
 members = ["crates/*"]
 
 [profile.bench]
-debug = true
+debug = false
 lto = false
 
 [profile.release]
-debug = true
+debug = false
+
+[profile.dev]
+debug = false
 
 [profile.test]
 codegen-units = 32
