@@ -106,7 +106,13 @@ where
     };
     let construction_secs = tic.elapsed().as_secs_f64();
 
-    let result = match solve_with_backend(robot.clone(), problem, structure, MAX_SOLVE_TIME) {
+    let result = match solve_with_backend(
+        robot.clone(),
+        robot_name,
+        problem,
+        structure,
+        MAX_SOLVE_TIME,
+    ) {
         Ok(result) => result,
         Err(e) => {
             eprintln!(

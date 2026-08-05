@@ -124,6 +124,38 @@ pub struct RecordingResult<const N: usize> {
     pub queries: Vec<RecordedQuery>,
 }
 
+/// Per-robot [`AdaptiveSettings`] for adaptive DDRRT-Connect.
+///
+/// # Panics
+///
+/// Panics if `robot` isn't one of `"panda"`, `"ur5"`, `"fetch"`, or `"baxter"`.
+#[must_use]
+pub fn adaptive_settings_for_robot(robot: &str) -> AdaptiveSettings<f32, f32, f32> {
+    match robot {
+        "ur5" => AdaptiveSettings {
+            range: 1.5,
+            r_nom: 10.0,
+            alpha: 3e-4,
+        },
+        "panda" => AdaptiveSettings {
+            range: 1.0,
+            r_nom: 25.0,
+            alpha: 1e-3,
+        },
+        "fetch" => AdaptiveSettings {
+            range: 0.6,
+            r_nom: 25.0,
+            alpha: 1e-4,
+        },
+        "baxter" => AdaptiveSettings {
+            range: 0.5,
+            r_nom: 50.0,
+            alpha: 1e-4,
+        },
+        _ => panic!("no tuned AdaptiveSettings for robot {robot:?}"),
+    }
+}
+
 /// Run the same adaptive RRT-Connect planner that `mbm::solve` uses, but against a
 /// [`RecordingWorld`] instead of a bare `World3d`, so that every collision query issued during
 /// planning is captured.
@@ -131,6 +163,7 @@ pub struct RecordingResult<const N: usize> {
 /// This mirrors `mbm::solve` closely.
 pub fn solve_recording<R, const N: usize>(
     robot: R,
+    robot_name: &str,
     problem: &Problem<N>,
     world: RecordingWorld,
 ) -> Result<RecordingResult<N>, Box<dyn std::error::Error>>
@@ -166,11 +199,7 @@ where
             Vector(problem.end_cfg),
             &valid,
             &sampler,
-            &AdaptiveSettings {
-                range: 1.0,
-                r_nom: 25.0,
-                alpha: 1e-4,
-            },
+            &adaptive_settings_for_robot(robot_name),
             &mut (Solved::new() | &mut samples | &mut nodes),
             &mut rng,
         );

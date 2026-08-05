@@ -131,6 +131,7 @@ where
 
             let result = match solve_recording(
                 robot.clone(),
+                robot_name,
                 problem,
                 RecordingWorld::new(problem.world.clone()),
             ) {

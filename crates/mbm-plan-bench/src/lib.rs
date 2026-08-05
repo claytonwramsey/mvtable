@@ -10,7 +10,7 @@ use carom_core::{BlockValidate, Collide3, Robot};
 use mbm::{Problem, SolveStatus};
 use mvtable_bench::{SimdStructure, Structure};
 use rumple::{
-    geo::{AdaptiveSettings, adaptive_ddrrtc},
+    geo::adaptive_ddrrtc,
     metric::SquaredEuclidean,
     nn::KiddoMap,
     sample::{HaltonState, Rectangle},
@@ -19,7 +19,7 @@ use rumple::{
     valid::Validate,
 };
 
-pub use mbm_extract::sample_scene;
+pub use mbm_extract::{adaptive_settings_for_robot, sample_scene};
 
 /// A [`Collide3`] world backed by any point-cloud collision structure implementing
 /// [`mvtable_bench::Structure`], so the same planner code can be driven against
@@ -75,6 +75,7 @@ impl<S: SimdStructure<3>> Collide3<f32> for SimdPointCloudWorld<S> {
 /// Solve a MBM problem and report its status.
 pub fn solve_with_backend<R, W, const N: usize>(
     robot: R,
+    robot_name: &str,
     problem: &Problem<N>,
     world: W,
     max_solve_time: std::time::Duration,
@@ -118,11 +119,7 @@ where
             Vector(problem.end_cfg),
             &valid,
             &sampler,
-            &AdaptiveSettings {
-                range: 1.0,
-                r_nom: 25.0,
-                alpha: 1e-4,
-            },
+            &adaptive_settings_for_robot(robot_name),
             &mut (Solved::new() | &mut samples | &mut nodes | &mut alarm),
             &mut rng,
         );
