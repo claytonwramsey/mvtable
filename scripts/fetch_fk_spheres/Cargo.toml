@@ -1,0 +1,17 @@
+[package]
+name = "fetch-fk-spheres"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# NOTE: this is a standalone crate, deliberately outside mvtable's own workspace (whose
+# members are `crates/*`), because it depends on `carom` — Clayton's unpublished
+# forward-kinematics/collision-checking library, the "carom's generated fkcc" referred to in
+# mvtable-bench's own doc comments (crates/mvtable-bench/src/lib.rs) — via a local path
+# dependency. It exists only to dump ground-truth FK'd collision-sphere positions for
+# fetch_bvh_figure.py to render; it is not meant to become part of mvtable proper.
+[dependencies]
+carom = { path = "/home/clayton/projects/rumple/crates/carom", features = ["fetch"] }
+
+# Stand alone: not a member of mvtable's own workspace (see the NOTE above).
+[workspace]
