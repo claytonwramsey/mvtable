@@ -61,9 +61,9 @@ The performance of the MVT is excellent, outpacing even the SIMD-accelerated [CA
 In throughput benchmarks, we find that the MVT has superior query throughput on large point clouds to all other compared methods,
 despite having cheap construction times and memory costs.
 
-![Plot of planning time distributions](doc/mbm_plan_times.svg)
+![Plot of planning time versus primitive-only baseline](doc/primitive_vs_other.svg)
 
-These performance gains translate to motion planning, where we can see a respectable constant-factor speedup from MVTs on most robots.
+On the whole, MVTs offer extremely good planning performance, on par with ground-truth primitive geometry.
 
 ## Optional features
 

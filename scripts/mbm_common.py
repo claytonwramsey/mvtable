@@ -11,9 +11,11 @@ from matplotlib.colors import to_rgb
 from matplotlib.ticker import FixedLocator, FuncFormatter
 
 # Locator types that mean "this axis has category positions, not numeric ones": `FixedLocator`
-# from an explicit `ax.set_xticks(positions, labels)` call (e.g. plot_baxter_solve_time.py's
-# structure names), and `StrCategoryLocator` from plotting directly against a string column (e.g.
-# plot_mbm_plan.py's `x="robot"`, handled entirely by seaborn/matplotlib's categorical machinery).
+# from an explicit `ax.set_xticks(positions, labels)` call with string labels (e.g. structure
+# names), and `StrCategoryLocator` from plotting directly against a string column (e.g. `x="robot"`,
+# handled entirely by seaborn/matplotlib's categorical machinery). `trim_spines_to_data` skips its
+# numeric tick-trimming logic on axes like these, since dropping/adding a tick would shift every
+# later category label onto the wrong position instead of just adding/removing one.
 CATEGORICAL_LOCATORS = (FixedLocator, StrCategoryLocator)
 
 # Human-readable robot names, for any axis/legend that would otherwise show the raw MotionBenchMaker
@@ -26,25 +28,26 @@ ROBOT_LABELS = {
 }
 
 # Canonical structure -> color, shared by every script that plots more than one structure
-# (`plot_mbm.py`, `plot_baxter_solve_time.py`, `plot_mbm_plan.py`). Keyed by the `mvtable`-style
-# structure names `mbm_bench` writes; scripts reading `mbm_plan_results.csv`'s slightly different
-# names (e.g. `mvtable_cpp` instead of `mvt_cpp`) look up the same underlying color by the
-# `mbm_bench` key and re-key it locally.
+# (`plot_mbm.py`, `plot_primitive_vs_other.py`). Keyed by the `mvtable`-style structure names
+# `mbm_bench` writes; scripts reading `mbm_plan_results.csv`'s slightly different names (e.g.
+# `mvtable_cpp` instead of `mvt_cpp`) look up the same underlying color by the `mbm_bench` key and
+# re-key it locally.
 #
 # `mvtable`/`mvtable_mutable` are the site's own `--bh-blue`/`--bh-red` (see `main.css`) - the two
-# most prominent series get the two colors a reader already associates with this site. The other
-# three keep their original Okabe-Ito colorblind-safe values rather than being reinvented in a
-# site-branded color: Okabe-Ito was already vivid and well-tested, and re-deriving a whole new set
-# of secondary colors (an earlier version of this palette tried pulling from the syntax-highlight
+# most prominent series get the two colors a reader already associates with this site. `capt` is
+# goldenrod - distinct at a glance from every other series and from the reference-line black used
+# elsewhere. `kiddo`/`mvt_cpp` fill out the rest of the palette from Okabe-Ito/Paul Tol's
+# colorblind-safe sets rather than a reinvented site-branded color: re-deriving a whole new set of
+# secondary colors (an earlier version of this palette tried pulling from the syntax-highlight
 # palette in `code-light.css`) produced muddier, less legible lines for no real benefit. Checked
-# with `colorspacious` (simulated deuteranomaly/protanomaly/tritanomaly, full severity): every
-# pair below clears deltaE >= 17, edging out Okabe-Ito's own worst-case pairwise separation (~16).
+# with `colorspacious` (simulated deuteranomaly/protanomaly/tritanomaly, full severity): every pair
+# below clears deltaE >= 17.
 STRUCTURE_COLORS = {
     "mvtable": "#3F51B5",  # site --bh-blue
     "mvtable_mutable": "#E03C31",  # site --bh-red
-    "capt": "#009E73",  # Okabe-Ito bluish green
-    "kiddo": "#E69F00",  # Okabe-Ito orange
-    "mvt_cpp": "#CC79A7",  # Okabe-Ito reddish purple
+    "capt": "#DAA520",  # goldenrod
+    "kiddo": "#009E73",  # Okabe-Ito bluish green
+    "mvt_cpp": "#882255",  # Paul Tol wine
 }
 
 # Canonical robot -> color, used only by `plot_voxel_width_sweep.py`. Plain matplotlib default
@@ -57,23 +60,12 @@ ROBOT_COLORS = {
     "baxter": "#d62728",  # tab:red
 }
 
-# Negative labelpad on every panel's y-axis label, pulled in from matplotlib's default (4pt) so
-# the label sits closer to the tick numbers rather than leaving a wide gap of unused margin to its
-# left - `fig.tight_layout()` shrinks the figure's left margin to match, so the freed-up space
-# goes to the plot area instead of sitting blank.
-YLABEL_PAD = -8
-
-
-def wrap_tick_label(label: str) -> str:
-    """Break `label` one word per line (keeping a parenthesized suffix like "(SIMD x8)" together
-    as its own line), e.g. "Mutable MVT (SIMD x8)" -> "Mutable\nMVT\n(SIMD x8)", so labels stay
-    narrow enough to sit horizontally under their violin without colliding with their neighbors -
-    unlike a rotated label, a horizontal one can't lean on diagonal clearance for width."""
-    base, _, paren = label.partition(" (")
-    lines = base.split(" ")
-    if paren:
-        lines.append("(" + paren)
-    return "\n".join(lines)
+# Labelpad on every panel's y-axis label. A previous, more aggressive negative value pulled the
+# label in close enough to save margin, but on a panel with few labeled ticks the rotated label's
+# vertical center can coincide with one of them (e.g. the query-time throughput panel's "Q" sitting
+# right against a "10^2" tick) - there's no per-panel signal to detect that in advance, so this
+# just uses matplotlib's own default (4pt), which leaves enough clearance on every panel checked.
+YLABEL_PAD = 4
 
 
 QUERY_METRICS = ["all", "colliding", "non_colliding"]
@@ -194,14 +186,24 @@ def _label_endpoints(axis, lo: float, hi: float) -> None:
     axis.set_major_formatter(FuncFormatter(relabel))
 
 
-def trim_spines_to_data(ax) -> None:
+def trim_spines_to_data(
+    ax,
+    xlim: tuple[float, float] | None = None,
+    ylim: tuple[float, float] | None = None,
+) -> None:
     """Trim the left/bottom spines to the tight bounding box of the plotted data (a Tufte
     range-frame) instead of the full, margin-padded axis limits, so each spine's own extent shows
     the data's range rather than an arbitrary rectangle. Also drops ticks beyond that range (which
     would otherwise float past the now-shorter spine) and labels the exact endpoints. Call after
     all of `ax`'s data is plotted (and after `sns.despine`, though order with that doesn't
-    actually matter)."""
-    (x_lo, x_hi), (y_lo, y_hi) = ax.dataLim.intervalx, ax.dataLim.intervaly
+    actually matter).
+
+    By default derives the range from `ax.dataLim`, the bounding box matplotlib tracks across
+    every plotted artist. Pass `xlim`/`ylim` explicitly when that's too broad - e.g. a reference
+    or fit line drawn beyond the real data's extent would otherwise pull the trimmed range out to
+    match the line instead of the actual data points."""
+    (x_lo, x_hi) = xlim if xlim is not None else ax.dataLim.intervalx
+    (y_lo, y_hi) = ylim if ylim is not None else ax.dataLim.intervaly
     if np.isfinite(x_lo) and np.isfinite(x_hi):
         ax.spines["bottom"].set_bounds(x_lo, x_hi)
         if not _is_categorical(ax.xaxis):
@@ -214,9 +216,39 @@ def trim_spines_to_data(ax) -> None:
             _label_endpoints(ax.yaxis, y_lo, y_hi)
 
 
-def finish_single_panel(ax, xlabel: str, yscale: str = "log") -> None:
+def _thin_interior_ticks(axis, keep_every: int = 2) -> None:
+    """Drop every other major tick label on `axis` (keeping the two range-frame endpoints
+    `trim_spines_to_data` already added, plus every `keep_every`-th tick in between), so a linear
+    axis with many closely-spaced round-number ticks - e.g. a point-cloud-size axis running
+    10000/20000/.../70000 across a 5-inch-wide panel - doesn't render overlapping digit strings.
+    Call after `trim_spines_to_data`, since it needs the final endpoint-inclusive tick set."""
+    ticks = sorted(axis.get_majorticklocs())
+    if len(ticks) <= 3:
+        return
+    lo, hi = ticks[0], ticks[-1]
+    interior = ticks[1:-1]
+    kept = interior[::keep_every]
+    # Thinning alone doesn't guarantee the *last* kept interior tick clears the "hi" endpoint's
+    # own label - e.g. 70000 sitting right next to a 77028 endpoint, only 9% of the range apart,
+    # is closer than `_label_endpoints`'s own endpoint-proximity check (tuned for narrow log-scale
+    # labels like "10^2") drops. Wide multi-digit round numbers need more clearance than that, so
+    # this re-checks with a larger fraction now that thinning has already thrown out most of the
+    # crowding.
+    span = hi - lo
+    threshold = 0.1 * span
+    kept = [t for t in kept if threshold <= t - lo and hi - t >= threshold]
+    axis.set_ticks([lo, *kept, hi])
+
+
+def finish_single_panel(
+    ax, xlabel: str, yscale: str = "log", thin_xticks: bool = False
+) -> None:
     """Apply the shared single-panel look used across every plot in this directory: linear x,
     `sns.despine`, and a Tufte range-frame via `trim_spines_to_data`.
+
+    `thin_xticks` drops every other interior x tick label via `_thin_interior_ticks` - opt in for
+    an axis dense enough with round-number ticks to overlap (e.g. `plot_mbm.py`'s point-cloud-size
+    axis), since axes with fewer/shorter tick labels don't need it.
 
     `yscale` defaults to `"log"` since every time/memory metric plotted in this directory spans a
     comparable multi-order-of-magnitude range that a linear scale would crush into a sliver at the
@@ -228,6 +260,8 @@ def finish_single_panel(ax, xlabel: str, yscale: str = "log") -> None:
     ax.set_xlabel(xlabel)
     sns.despine(ax=ax)
     trim_spines_to_data(ax)
+    if thin_xticks:
+        _thin_interior_ticks(ax.xaxis)
 
 
 def legend_order(

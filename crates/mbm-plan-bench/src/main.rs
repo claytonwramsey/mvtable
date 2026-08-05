@@ -12,6 +12,7 @@ use std::{
 use capt::Capt;
 use carom::{
     BlockValidate, Robot,
+    env::World3d,
     robot::{Baxter, Fetch, Panda, Ur5},
 };
 use kiddo::ImmutableKdTree;
@@ -158,6 +159,7 @@ fn run_robot<R, const N: usize>(
 ) -> Result<(), Box<dyn std::error::Error>>
 where
     R: Robot<N, f32>
+        + BlockValidate<N, f32, World3d<f32>>
         + BlockValidate<N, f32, PointCloudWorld<Mvt<3, f32>>>
         + BlockValidate<N, f32, PointCloudWorld<MutableMvt<3, f32>>>
         + BlockValidate<N, f32, PointCloudWorld<MvtCpp>>
@@ -202,6 +204,18 @@ where
                 filtered_points.len(),
             );
 
+            run_one_backend(
+                &robot,
+                robot_name,
+                dataset,
+                problem,
+                &filtered_points,
+                r_range,
+                r_filter,
+                "primitive",
+                |_pc, _| Ok(problem.world.clone()),
+                csv,
+            )?;
             run_one_backend(
                 &robot,
                 robot_name,

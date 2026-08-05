@@ -204,7 +204,7 @@ def save_single_panel(
     pin_legend_first: str | None = None,
     legend_fixed_order: list[str] | None = None,
 ) -> None:
-    finish_single_panel(ax, xlabel)
+    finish_single_panel(ax, xlabel, thin_xticks=True)
     handles, labels = legend_order(
         *ax.get_legend_handles_labels(),
         pin_first=pin_legend_first,
