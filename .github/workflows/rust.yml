@@ -7,6 +7,10 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  # .override "-C target-cpu=native" from cargo/config.toml, since
+  # CI runners share cache across many machines
+  RUSTFLAGS: ""
 
 jobs:
   test_nightly:
