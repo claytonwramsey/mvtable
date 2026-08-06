@@ -39,14 +39,17 @@ jobs:
           toolchain: ${{ matrix.toolchain }}
           override: true
 
+      - name: Cache Rust code
+        uses: Swatinem/rust-cache@v2
+
       - name: Build tests
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --workspace --exclude mvtable-viz --no-run ${{ matrix.cargo_flags }}
+          args: --workspace --no-run ${{ matrix.cargo_flags }}
 
       - name: Test
         uses: actions-rs/cargo@v1
         with:
           command: test
-          args: --workspace --exclude mvtable-viz ${{ matrix.cargo_flags }}
+          args: --workspace ${{ matrix.cargo_flags }}
