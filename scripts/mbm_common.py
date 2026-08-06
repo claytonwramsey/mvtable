@@ -8,7 +8,7 @@ import seaborn as sns
 from matplotlib import patheffects
 from matplotlib.category import StrCategoryLocator
 from matplotlib.colors import to_rgb
-from matplotlib.ticker import FixedLocator, FuncFormatter
+from matplotlib.ticker import FixedLocator, FuncFormatter, MultipleLocator
 
 # Locator types that mean "this axis has category positions, not numeric ones": `FixedLocator`
 # from an explicit `ax.set_xticks(positions, labels)` call with string labels (e.g. structure
@@ -65,7 +65,7 @@ ROBOT_COLORS = {
 # vertical center can coincide with one of them (e.g. the query-time throughput panel's "Q" sitting
 # right against a "10^2" tick) - there's no per-panel signal to detect that in advance, so this
 # just uses matplotlib's own default (4pt), which leaves enough clearance on every panel checked.
-YLABEL_PAD = 4
+YLABEL_PAD = 0
 
 
 QUERY_METRICS = ["all", "colliding", "non_colliding"]
@@ -86,20 +86,45 @@ def drop_unreliable_query_rows(df: pd.DataFrame, verbose: bool = True) -> pd.Dat
     return df[~unreliable].copy()
 
 
-def save_figure(fig, out: pathlib.Path, crop: bool = False) -> None:
+PNG_DPI = 150
+
+
+def save_figure(
+    fig, out: pathlib.Path, crop: bool = False, crop_png: bool = False
+) -> None:
     """Write `fig` to `out` (SVG, transparent background so it renders on dark and light
     pages alike) and to a same-named `.png` (opaque, for contexts that need a raster).
 
-    `crop=True` trims the figure to the bounding box of its artists (no outer margin), for
-    embedding on a page that supplies its own layout/padding rather than relying on matplotlib's
-    figure-sized canvas."""
+    `crop=True` trims the SVG to the bounding box of its artists (no outer margin), for embedding
+    on a page that supplies its own layout/padding rather than relying on matplotlib's
+    figure-sized canvas. The PNG keeps the full, uncropped figure canvas regardless - every panel
+    in this directory is sized so its axes already fill that canvas closely, and a fixed canvas
+    size is more predictable for anything consuming the raster directly.
+
+    `crop_png`, if also set, trims the PNG the same way, scaling its DPI up to compensate. This is
+    only worth opting into for an aspect-equal plot (`plot_primitive_vs_other.py`'s scatter): its
+    axes box doesn't fill a non-square figure the way an ordinary panel's does, so leaving its PNG
+    uncropped carries a visible blank margin down one side that the cropped SVG doesn't have.
+    `bbox_inches="tight"` shrinks the *physical* figure to that content bbox before rasterizing -
+    at a fixed DPI that means fewer total pixels than the uncropped panels get, for a plot that
+    isn't actually less detailed, just narrower. Scaling DPI up by the inverse of that area shrink
+    keeps the cropped PNG's pixel budget in line with an uncropped render at `PNG_DPI`, instead of
+    quietly handing it a lower resolution than every other figure in this directory."""
     out.parent.mkdir(exist_ok=True)
-    save_kwargs = {"transparent": True}
-    if crop:
-        save_kwargs["bbox_inches"] = "tight"
-        save_kwargs["pad_inches"] = 0
-    fig.savefig(out, **save_kwargs)
-    fig.savefig(out.with_suffix(".png"), dpi=150)
+    pad_inches = 0.1
+    crop_kwargs = {"bbox_inches": "tight", "pad_inches": pad_inches} if crop else {}
+    fig.savefig(out, transparent=True, **crop_kwargs)
+
+    png_dpi = PNG_DPI
+    png_kwargs = {}
+    if crop_png:
+        orig_w, orig_h = fig.get_size_inches()
+        tight_bbox = fig.get_tightbbox(fig.canvas.get_renderer())
+        crop_w = tight_bbox.width + 2 * pad_inches
+        crop_h = tight_bbox.height + 2 * pad_inches
+        png_dpi = PNG_DPI * ((orig_w * orig_h) / (crop_w * crop_h)) ** 0.5
+        png_kwargs = crop_kwargs
+    fig.savefig(out.with_suffix(".png"), dpi=png_dpi, **png_kwargs)
     print(f"wrote {out}")
     print(f"wrote {out.with_suffix('.png')}")
 
@@ -139,6 +164,25 @@ def _format_endpoint(value: float, sig: int = 3) -> str:
     decimals = max(sig - 1 - int(np.floor(np.log10(abs(value)))), 0)
     text = f"{value:.{decimals}f}"
     return text.rstrip("0").rstrip(".") if "." in text else text
+
+
+def _plain_log_tick(value: float, pos: int | None = None) -> str:
+    """Plain decimal tick label ("100", not "100.0" or "10^2") for a regular (non-endpoint)
+    log-axis tick. Trims trailing zeros per tick independently, unlike `ScalarFormatter`'s shared
+    decimal precision across every tick on an axis (which pads every tick to match whichever one,
+    e.g. "0.1", needs the most decimal places)."""
+    if value == 0:
+        return "0"
+    text = f"{value:f}".rstrip("0").rstrip(".")
+    return text
+
+
+def _ensure_plain_log_formatter(axis) -> None:
+    """Give a log-scaled axis a plain-decimal major formatter instead of the default power-of-ten
+    notation ("10^2"), which is harder to scan at a glance than an ordinary number. No-op on a
+    linear axis."""
+    if axis.get_scale() == "log":
+        axis.set_major_formatter(FuncFormatter(_plain_log_tick))
 
 
 # A regular round-number tick within this fraction of the total visible span (in display
@@ -207,48 +251,29 @@ def trim_spines_to_data(
     if np.isfinite(x_lo) and np.isfinite(x_hi):
         ax.spines["bottom"].set_bounds(x_lo, x_hi)
         if not _is_categorical(ax.xaxis):
+            _ensure_plain_log_formatter(ax.xaxis)
             _clip_ticks(ax.xaxis, x_lo, x_hi)
             _label_endpoints(ax.xaxis, x_lo, x_hi)
     if np.isfinite(y_lo) and np.isfinite(y_hi):
         ax.spines["left"].set_bounds(y_lo, y_hi)
         if not _is_categorical(ax.yaxis):
+            _ensure_plain_log_formatter(ax.yaxis)
             _clip_ticks(ax.yaxis, y_lo, y_hi)
             _label_endpoints(ax.yaxis, y_lo, y_hi)
 
 
-def _thin_interior_ticks(axis, keep_every: int = 2) -> None:
-    """Drop every other major tick label on `axis` (keeping the two range-frame endpoints
-    `trim_spines_to_data` already added, plus every `keep_every`-th tick in between), so a linear
-    axis with many closely-spaced round-number ticks - e.g. a point-cloud-size axis running
-    10000/20000/.../70000 across a 5-inch-wide panel - doesn't render overlapping digit strings.
-    Call after `trim_spines_to_data`, since it needs the final endpoint-inclusive tick set."""
-    ticks = sorted(axis.get_majorticklocs())
-    if len(ticks) <= 3:
-        return
-    lo, hi = ticks[0], ticks[-1]
-    interior = ticks[1:-1]
-    kept = interior[::keep_every]
-    # Thinning alone doesn't guarantee the *last* kept interior tick clears the "hi" endpoint's
-    # own label - e.g. 70000 sitting right next to a 77028 endpoint, only 9% of the range apart,
-    # is closer than `_label_endpoints`'s own endpoint-proximity check (tuned for narrow log-scale
-    # labels like "10^2") drops. Wide multi-digit round numbers need more clearance than that, so
-    # this re-checks with a larger fraction now that thinning has already thrown out most of the
-    # crowding.
-    span = hi - lo
-    threshold = 0.1 * span
-    kept = [t for t in kept if threshold <= t - lo and hi - t >= threshold]
-    axis.set_ticks([lo, *kept, hi])
-
-
 def finish_single_panel(
-    ax, xlabel: str, yscale: str = "log", thin_xticks: bool = False
+    ax, xlabel: str, yscale: str = "log", xtick_step: float | None = None
 ) -> None:
     """Apply the shared single-panel look used across every plot in this directory: linear x,
     `sns.despine`, and a Tufte range-frame via `trim_spines_to_data`.
 
-    `thin_xticks` drops every other interior x tick label via `_thin_interior_ticks` - opt in for
-    an axis dense enough with round-number ticks to overlap (e.g. `plot_mbm.py`'s point-cloud-size
-    axis), since axes with fewer/shorter tick labels don't need it.
+    `xtick_step`, if given, locks the x-axis's major ticks to evenly spaced multiples of that
+    step (via `MultipleLocator`) instead of matplotlib's automatic linear locator - e.g.
+    `plot_mbm.py` passes 20000 for its point-cloud-size axis so interior ticks land on
+    20000/40000/60000 rather than whatever round numbers the automatic locator happens to pick,
+    which reads as more evenly balanced. `trim_spines_to_data` still adds the exact data min/max
+    as its own range-frame endpoints on top of these.
 
     `yscale` defaults to `"log"` since every time/memory metric plotted in this directory spans a
     comparable multi-order-of-magnitude range that a linear scale would crush into a sliver at the
@@ -258,10 +283,10 @@ def finish_single_panel(
     with `YLABEL_PAD`'s tightened label margin)."""
     ax.set_yscale(yscale)
     ax.set_xlabel(xlabel)
+    if xtick_step is not None:
+        ax.xaxis.set_major_locator(MultipleLocator(xtick_step))
     sns.despine(ax=ax)
     trim_spines_to_data(ax)
-    if thin_xticks:
-        _thin_interior_ticks(ax.xaxis)
 
 
 def legend_order(

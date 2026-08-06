@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Scatter CAPT/MVT (SIMD) motion-planning time against primitive-only time, per MBM problem
-instance (robot, dataset, scene_id), faceted by robot (or pooled into one joint plot with
-`--joint`).
+instance (robot, dataset, scene_id), pooled across all selected robots into one plot.
 
 Reads `data/mbm_plan_results.csv` (produced by `cargo run --release -p mbm-plan-bench`) and writes
 an SVG (default `doc/primitive_vs_other.svg`, + a `.png` sibling). Only instances solved under
@@ -10,17 +9,15 @@ capped at the planner's time budget, not a real timing measurement, so mixing it
 a data point when it's actually a timeout artifact.
 
 Mirrors rumple's `scripts/plot_primitive_vs_other.py` (Okabe-Ito colorblind-safe series colors,
-log-log axes, despined Tufte range-frame axes, one shared legend below the whole figure), swapping
-that script's mesh/point-cloud-vs-primitive comparison for this repo's own point-cloud
-structures (CAPT, MVT) against the same primitive-only baseline:
+log-log axes, despined Tufte range-frame axes), swapping that script's mesh/point-cloud-vs-primitive
+comparison for this repo's own point-cloud structures (CAPT, MVT) against the same primitive-only
+baseline:
 
     python3 scripts/plot_primitive_vs_other.py
     python3 scripts/plot_primitive_vs_other.py --structures mvtable_simd --robots panda ur5
-    python3 scripts/plot_primitive_vs_other.py --joint
 """
 
 import argparse
-import math
 import pathlib
 
 import matplotlib
@@ -31,9 +28,10 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 from mbm_common import (
-    ROBOT_LABELS,
     STRUCTURE_COLORS,
+    YLABEL_PAD,
     save_figure,
+    style_legend,
     trim_spines_to_data,
 )
 
@@ -57,8 +55,8 @@ COLORS = {
     "mvt_cpp_simd": STRUCTURE_COLORS["mvt_cpp"],
 }
 LABELS = {
-    "capt_simd": "CAPT (SIMD)",
-    "mvtable_simd": "MVT (SIMD)",
+    "capt_simd": "CAPT",
+    "mvtable_simd": "MVT",
     "mvtable_mutable_simd": "Mutable MVT (SIMD)",
     "mvt_cpp_simd": "MVT (C++, SIMD)",
 }
@@ -93,7 +91,7 @@ def parse_args() -> argparse.Namespace:
         nargs="+",
         choices=ROBOT_ORDER,
         default=None,
-        help="subset of robots to plot, one panel each (default: all robots present in the data)",
+        help="subset of robots to pool into the plot (default: all robots present in the data)",
     )
     parser.add_argument(
         "--structures",
@@ -103,24 +101,16 @@ def parse_args() -> argparse.Namespace:
         help="subset of SIMD structures to plot against the primitive-only baseline "
         f"(default: {' '.join(DEFAULT_STRUCTURES)})",
     )
-    parser.add_argument(
-        "--joint",
-        action="store_true",
-        help="pool all selected robots into one plot instead of faceting into one panel per robot",
-    )
     return parser.parse_args()
 
 
 def _draw_scatter_panel(
-    ax, groups: list[tuple[str, tuple, pd.Series, pd.Series]], title: str
+    ax, groups: list[tuple[str, tuple, pd.Series, pd.Series]]
 ) -> bool:
-    """Draw one primitive-vs-structure scatter panel into `ax` from `groups`, a list of
-    `(label, color, x, y)` scatter series (already filtered to non-empty). Shared by the per-robot
-    faceted panels and the pooled `--joint` panel - the only difference between those two callers
-    is how many series they hand in and what color/label each one gets. Returns False (and leaves
-    `ax` blank) if `groups` is empty."""
+    """Draw the primitive-vs-structure scatter into `ax` from `groups`, a list of `(label, color,
+    x, y)` scatter series (already filtered to non-empty). Returns False (and leaves `ax` blank)
+    if `groups` is empty."""
     if not groups:
-        ax.set_title(title, fontsize=10)
         ax.text(
             0.5,
             0.5,
@@ -145,18 +135,20 @@ def _draw_scatter_panel(
     y_hi = max(y.max() for _, _, _, y in groups)
 
     # Span the reference line across the full combined range so it still reads as a diagonal even
-    # when the x and y ranges differ, rather than clipping it to one axis's narrower span.
+    # when the x and y ranges differ - matplotlib clips it to whichever axis view ends up
+    # narrower below, rather than this needing to compute that itself.
     ref_lo, ref_hi = min(x_lo, y_lo), max(x_hi, y_hi)
 
-    # Pad that combined range by a fixed fraction in log space for the *view* (see
-    # VIEW_MARGIN_FRAC), so the plot box is a little larger than the tightest data/line extent.
-    log_lo, log_hi = np.log10(ref_lo), np.log10(ref_hi)
-    pad = VIEW_MARGIN_FRAC * (log_hi - log_lo)
-    view_lo, view_hi = 10 ** (log_lo - pad), 10 ** (log_hi + pad)
+    def _padded_view(lo: float, hi: float) -> tuple[float, float]:
+        """Pad `[lo, hi]` by `VIEW_MARGIN_FRAC` in log space, so the plot box is a little larger
+        than the tightest data extent on that axis."""
+        log_lo, log_hi = np.log10(lo), np.log10(hi)
+        pad = VIEW_MARGIN_FRAC * (log_hi - log_lo)
+        return 10 ** (log_lo - pad), 10 ** (log_hi + pad)
 
     ax.plot(
-        [view_lo, view_hi],
-        [view_lo, view_hi],
+        [ref_lo, ref_hi],
+        [ref_lo, ref_hi],
         color=REFERENCE_COLOR,
         linestyle="--",
         linewidth=1,
@@ -178,53 +170,36 @@ def _draw_scatter_panel(
 
     ax.set_xscale("log")
     ax.set_yscale("log")
-    # View limits span the combined, margin-padded, symmetric range rather than each axis's own
-    # narrower data range, so the two corners of the plot box both land exactly on the equal-time
-    # line - it wouldn't hit the corners if x and y kept their own tighter, unequal ranges. The
-    # spines themselves still trim to the real per-axis data below, so this padding shows up as
-    # visible spacing between a spine's end (or a fit line's terminus) and the plot edge, rather
-    # than stretching the spine/tick labels to match.
-    ax.set_xlim(view_lo, view_hi)
-    ax.set_ylim(view_lo, view_hi)
+    # Each axis views its own margin-padded data range rather than a shared, symmetric one - x and
+    # y rarely span the same number of decades, and forcing them to match pads whichever axis is
+    # narrower well past its real data, leaving two dead triangular corners in the (aspect-equal)
+    # plot box. Letting each axis hug its own range instead keeps the box tight; `set_aspect`
+    # below still shrinks the physical box to the narrower dimension so a decade in x and a decade
+    # in y cover the same physical distance, which is what makes "45 degrees" mean equal time.
+    ax.set_xlim(*_padded_view(x_lo, x_hi))
+    ax.set_ylim(*_padded_view(y_lo, y_hi))
     ax.set_aspect("equal", adjustable="box")
-    ax.set_title(title, fontsize=10)
 
     sns.despine(ax=ax)
     # Tufte range-frame: trim spines to the actual scatter data extent (not the fit/reference
     # lines' possibly-wider reach) and label the exact min/max instead of only the nearest
-    # round-number tick.
+    # round-number tick. Also gives the log axes plain decimal tick labels ("100", not "10^2").
     trim_spines_to_data(ax, xlim=(x_lo, x_hi), ylim=(y_lo, y_hi))
+
+    handles, labels = ax.get_legend_handles_labels()
+    # The equal-time reference line is a guide, not a data series, so it reads last rather than
+    # wherever it happened to be drawn.
+    order = sorted(range(len(labels)), key=lambda i: labels[i] == "Equal time")
+    # The lower-right corner of the view sits below the equal-time diagonal, where CAPT/MVT are
+    # consistently slower than the primitive baseline and the scatter is sparse - an inset legend
+    # there doesn't cover any real data.
+    style_legend(
+        ax,
+        [handles[i] for i in order],
+        [labels[i] for i in order],
+        loc="lower right",
+    )
     return True
-
-
-def plot_panel(
-    ax,
-    combined: pd.DataFrame,
-    title: str,
-    structures: list[str],
-    print_prefix: str,
-) -> bool:
-    """Draw one robot's primitive-vs-structure scatter into `ax`, from `combined` (rows indexed
-    arbitrarily, one column per structure plus "primitive"). Returns False (and leaves `ax` blank)
-    if there's no instance solved under both the primitive baseline and any of `structures`."""
-    pairs = {
-        name: combined[[BASELINE, name]].dropna()
-        for name in structures
-        if name in combined.columns
-    }
-    pairs = {name: pair for name, pair in pairs.items() if not pair.empty}
-
-    for name in structures:
-        n = len(pairs.get(name, []))
-        print(
-            f"{print_prefix}{name}: {n} instances solved under both primitive and {name}"
-        )
-
-    groups = [
-        (LABELS[name], COLORS[name], pair[BASELINE], pair[name])
-        for name, pair in pairs.items()
-    ]
-    return _draw_scatter_panel(ax, groups, title)
 
 
 def main() -> None:
@@ -255,75 +230,35 @@ def main() -> None:
         print("no data to plot for the requested robots/structures")
         return
 
-    if args.joint:
-        fig, ax = plt.subplots(figsize=(6, 6))
-        combined = pivot.loc[robots]
-        title = (
-            "All robots"
-            if set(robots) == set(ROBOT_ORDER)
-            else " + ".join(ROBOT_LABELS[r] for r in robots)
-        )
-        plotted_axes = (
-            [ax]
-            if plot_panel(ax, combined, title, args.structures, "combined/")
-            else []
-        )
-    else:
-        ncols = 2 if len(robots) > 1 else 1
-        nrows = math.ceil(len(robots) / ncols)
-        fig, axes = plt.subplots(
-            nrows, ncols, figsize=(4 * ncols, 4 * nrows), squeeze=False
-        )
-        flat_axes = axes.flat
+    combined = pivot.loc[robots]
+    pairs = {
+        name: combined[[BASELINE, name]].dropna()
+        for name in args.structures
+        if name in combined.columns
+    }
+    pairs = {name: pair for name, pair in pairs.items() if not pair.empty}
+    for name in args.structures:
+        n = len(pairs.get(name, []))
+        print(f"{name}: {n} instances solved under both primitive and {name}")
 
-        plotted_axes = []
-        for robot, ax in zip(robots, flat_axes):
-            combined = pivot.loc[robot]
-            if plot_panel(
-                ax, combined, ROBOT_LABELS[robot], args.structures, f"{robot}/"
-            ):
-                plotted_axes.append(ax)
+    groups = [
+        (LABELS[name], COLORS[name], pair[BASELINE], pair[name])
+        for name, pair in pairs.items()
+    ]
 
-        # Blank any leftover panel when the robot count doesn't fill the grid (e.g. 3 robots in a
-        # 2x2 grid).
-        for ax in list(flat_axes)[len(robots) :]:
-            ax.axis("off")
+    fig = plt.figure(figsize=(5, 4.5))
+    ax = fig.add_subplot()
+    _draw_scatter_panel(ax, groups)
 
-    fig.text(0.5, 0.065, "Planning time, primitives only (ms)", ha="center")
+    ax.set_xlabel("Planning time with primitives (ms)")
     if len(args.structures) == 1:
         y_label = f"{LABELS[args.structures[0]]} time (ms)"
     else:
-        y_label = "Structure time (ms)"
-    fig.text(0.02, 0.55, y_label, va="center", rotation="vertical")
+        y_label = "Planning time with point cloud (ms)"
+    ax.set_ylabel(y_label, labelpad=-8)
 
-    # One shared legend below the whole figure rather than repeating it per panel, with the
-    # equal-time reference line last since it's a guide, not a data series. Collected across all
-    # plotted panels (not just the first) and deduplicated, since a robot missing one structure
-    # would otherwise drop that series from the legend if it happened to be first.
-    seen = {}
-    for ax in plotted_axes:
-        for handle, label in zip(*ax.get_legend_handles_labels()):
-            seen.setdefault(label, handle)
-    if seen:
-        labels = sorted(seen, key=lambda label: label == "Equal time")
-        handles = [seen[label] for label in labels]
-        fig.legend(
-            handles,
-            labels,
-            frameon=False,
-            fontsize=9,
-            loc="lower center",
-            ncol=len(labels),
-            bbox_to_anchor=(0.5, 0.0),
-        )
-
-    # Bottom margin (0.06) reserves room for the figure-level legend anchored at y=0 above, so the
-    # tight/zero-padding crop in `save_figure` doesn't clip it - a negative anchor (placing the
-    # legend below the tight_layout rect entirely, as rumple's own version of this script does)
-    # relies on that save path's default pad_inches for clearance, which this repo's convention
-    # sets to 0.
-    fig.tight_layout(rect=(0.03, 0.06, 1, 1))
-    save_figure(fig, args.output, crop=True)
+    fig.tight_layout()
+    save_figure(fig, args.output, crop=True, crop_png=True)
 
 
 if __name__ == "__main__":

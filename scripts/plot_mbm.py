@@ -134,7 +134,7 @@ def plot_construction(
         binned_line(
             ax, sub.n_points, sub.ms, COLORS[name], annotate=False, label=LABELS[name]
         )
-    ax.set_ylabel("Construction time (ms)", labelpad=YLABEL_PAD)
+    ax.set_ylabel("Construction time (ms)", labelpad=-10)
     if title:
         ax.set_title(title)
 
@@ -151,7 +151,7 @@ def plot_memory(ax, df: pd.DataFrame, structures: list, title: str | None) -> No
         binned_line(
             ax, sub.n_points, sub.kib, COLORS[name], annotate=False, label=LABELS[name]
         )
-    ax.set_ylabel("Memory (KiB)", labelpad=YLABEL_PAD)
+    ax.set_ylabel("Memory (KiB)", labelpad=0)
     if title:
         ax.set_title(title)
 
@@ -190,7 +190,7 @@ def plot_query_panel(
             [], [], color=SIMD_LEGEND_COLOR, linestyle="--", label=SIMD_LEGEND_LABEL
         )
     if is_first:
-        ax.set_ylabel("Query time (ns)", labelpad=YLABEL_PAD)
+        ax.set_ylabel("Query time (ns)", labelpad=0)
     if title:
         ax.set_title(title)
 
@@ -204,7 +204,7 @@ def save_single_panel(
     pin_legend_first: str | None = None,
     legend_fixed_order: list[str] | None = None,
 ) -> None:
-    finish_single_panel(ax, xlabel, thin_xticks=True)
+    finish_single_panel(ax, xlabel, xtick_step=20000)
     handles, labels = legend_order(
         *ax.get_legend_handles_labels(),
         pin_first=pin_legend_first,
