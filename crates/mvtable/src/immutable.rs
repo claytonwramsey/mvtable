@@ -17,14 +17,8 @@ struct Voxel<A, I, const K: usize> {
     aabb: Aabb<A, K>,
     /// The offset of this voxel's points within the point coordinate pool.
     offset: I,
-    /// The true number of points contained by this voxel (used by [`Mvt::points`] and anywhere
-    /// else the padding added by [`Mvt::flatten_points`] must not be observable).
+    /// The number of points contained by this voxel.
     count: I,
-    /// The number of points actually reserved for this voxel in the point coordinate pool: `count`
-    /// rounded up to a multiple of [`SCAN_BLOCK`], padded with duplicates of one of the voxel's
-    /// own points. Used to scan and SIMD-query this voxel with an exact-multiple trip count and no
-    /// remainder handling.
-    padded_count: I,
 }
 
 /// The intermediate result of [`Mvt::build_hierarchy`].
@@ -340,14 +334,11 @@ impl<const K: usize, A: Axis, I: Index> Mvt<K, A, I> {
             voxel_aabbs,
             ..
         } = assignment;
-        let mut padded_counts = Vec::with_capacity(voxel_counts.len());
         let mut offsets = Vec::with_capacity(voxel_counts.len());
         let mut offset = 0usize;
         for &count in voxel_counts {
-            let padded = count.next_multiple_of(SCAN_BLOCK);
             offsets.push(offset);
-            padded_counts.push(padded);
-            offset += padded * K;
+            offset += count * K;
         }
         let mut pool = vec![A::ZERO; offset];
 
@@ -357,36 +348,20 @@ impl<const K: usize, A: Axis, I: Index> Mvt<K, A, I> {
         for (p, &voxel_i) in points.iter().zip(point_voxel) {
             let voxel_idx = voxel_i.to_usize();
             let base = offsets[voxel_idx];
-            let padded = padded_counts[voxel_idx];
+            let count = voxel_counts[voxel_idx];
             let i = cursors[voxel_idx];
             for k in 0..K {
-                pool[base + k * padded + i] = p[k];
+                pool[base + k * count + i] = p[k];
             }
             cursors[voxel_idx] = i + 1;
         }
 
-        // pad each voxel's tail (if any) with a duplicate of its own first point, so that we don't
-        // get spurious collisions.
-        for (voxel_idx, (&count, &padded)) in voxel_counts.iter().zip(&padded_counts).enumerate() {
-            if padded == count {
-                continue;
-            }
-            let base = offsets[voxel_idx];
-            for k in 0..K {
-                let first = pool[base + k * padded];
-                for dst in &mut pool[base + k * padded + count..base + k * padded + padded] {
-                    *dst = first;
-                }
-            }
-        }
-
         let mut voxels = Vec::with_capacity(voxel_counts.len());
-        for (voxel_idx, (&count, &padded)) in voxel_counts.iter().zip(&padded_counts).enumerate() {
+        for (voxel_idx, &count) in voxel_counts.iter().enumerate() {
             voxels.push(Voxel {
                 aabb: voxel_aabbs[voxel_idx],
                 offset: I::from_usize(offsets[voxel_idx]).ok_or(NewMvtError::TooManyVoxels)?,
                 count: I::from_usize(count).ok_or(NewMvtError::TooManyVoxels)?,
-                padded_count: I::from_usize(padded).ok_or(NewMvtError::TooManyVoxels)?,
             });
         }
 
@@ -430,7 +405,7 @@ impl<const K: usize, A: Axis, I: Index> Mvt<K, A, I> {
         }
         self.search_block(center, r, |voxel| {
             let base = voxel.offset.to_usize();
-            let count = voxel.padded_count.to_usize();
+            let count = voxel.count.to_usize();
             let axes: [&[A]; K] =
                 array::from_fn(|k| &self.points[base + k * count..base + k * count + count]);
             scan_block::<A, K, SCAN_BLOCK>(&axes, center, rsq)
@@ -503,8 +478,7 @@ impl<const K: usize, A: Axis, I: Index> Mvt<K, A, I> {
         self.voxels.iter().flat_map(move |v| {
             let base = v.offset.to_usize();
             let count = v.count.to_usize();
-            let stride = v.padded_count.to_usize();
-            (0..count).map(move |i| array::from_fn(|k| self.points[base + k * stride + i]))
+            (0..count).map(move |i| array::from_fn(|k| self.points[base + k * count + i]))
         })
     }
 
@@ -586,7 +560,7 @@ impl<const K: usize, A: AxisSimdElement, I: Index> Mvt<K, A, I> {
             let rsq_lane = r_lane.square();
             self.search_block(&center, r_lane, |voxel| {
                 let base = voxel.offset.to_usize();
-                let count = voxel.padded_count.to_usize();
+                let count = voxel.count.to_usize();
                 self.points_collide_simd::<L>(base, count, &center, rsq_lane)
             })
         })
@@ -604,9 +578,6 @@ impl<const K: usize, A: AxisSimdElement, I: Index> Mvt<K, A, I> {
     where
         Simd<A, L>: AxisSimd<L>,
     {
-        // `count` here is `Voxel::padded_count`, already rounded up to a multiple of
-        // `SCAN_BLOCK`, so for any `L` dividing `SCAN_BLOCK` the `while` loop below consumes the
-        // whole buffer and the scalar tail should never run.
         let center_simd: [Simd<A, L>; K] = array::from_fn(|k| Simd::splat(center[k]));
         let rsq_simd = Simd::splat(rsq);
 

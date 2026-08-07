@@ -385,9 +385,7 @@ impl<A: Axis, const K: usize> Aabb<A, K> {
     }
 }
 
-/// Block width (in points) that each voxel's per-axis point buffer is padded to a multiple of
-/// during [`Mvt`](crate::Mvt) construction, and that the scalar scan in [`scan_block`] processes
-/// at a time.
+/// Block width (in points) that the scalar scan in [`scan_block`] processes at a time.
 const SCAN_BLOCK: usize = 8;
 
 /// Determine whether any of the points described by `axes` (one contiguous per-axis slice each,
@@ -416,8 +414,7 @@ fn scan_block<A: Axis, const K: usize, const BLOCK: usize>(
     }
 
     // fewer than `BLOCK` points remain: fall back to a one-at-a-time scalar check for the
-    // remainder. When `count` is itself a multiple of `BLOCK` (e.g. every `Mvt` voxel, which is
-    // always padded to one), this range is empty and never runs.
+    // remainder.
     (i..count).any(|i| {
         let mut distsq = A::ZERO;
         for (k, &c) in center.iter().enumerate() {
@@ -427,5 +424,3 @@ fn scan_block<A: Axis, const K: usize, const BLOCK: usize>(
         distsq <= rsq
     })
 }
-
-
