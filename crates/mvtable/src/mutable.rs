@@ -308,10 +308,8 @@ impl<const K: usize, A: Axis, I: Index> MutableMvt<K, A, I> {
         let mut this =
             Self::try_with_workspace(bounding_box.lo, bounding_box.hi, voxel_width, r_point)?;
         // every point was already checked finite above, and the grid is already established, so
-        // `insert_initialized` is sufficient and cannot fail except via `TooManyVoxels`.
-        for p in points {
-            this.insert_initialized(p)?;
-        }
+        // `insert_initialized_batch` is sufficient and cannot fail except via `TooManyVoxels`.
+        this.insert_initialized_batch(points)?;
         Ok(this)
     }
 
@@ -392,8 +390,9 @@ impl<const K: usize, A: Axis, I: Index> MutableMvt<K, A, I> {
 
         let voxel_idx = if self.tables[leaf_slot] == I::SENTINEL {
             let idx = self.voxels.len();
+            let idx_i = I::from_usize(idx).ok_or(grid::TooManyVoxels)?;
             self.voxels.push(MutableVoxel::empty());
-            self.tables[leaf_slot] = I::from_usize(idx).ok_or(grid::TooManyVoxels)?;
+            self.tables[leaf_slot] = idx_i;
             idx
         } else {
             self.tables[leaf_slot].to_usize()
@@ -405,6 +404,60 @@ impl<const K: usize, A: Axis, I: Index> MutableMvt<K, A, I> {
             axis.push(x);
         }
         self.global_aabb.insert(point);
+
+        Ok(())
+    }
+
+    /// Insert every point in `points` (already known finite) into this `MutableMvt`, reserving
+    /// each touched voxel's per-axis storage up front instead of growing it one point at a time.
+    fn insert_initialized_batch(&mut self, points: &[[A; K]]) -> Result<(), grid::TooManyVoxels> {
+        let grid_width: [usize; K] = array::from_fn(|k| self.grid_width[k].to_usize());
+
+        // first pass: resolve each point's destination voxel and count how many points from this
+        // batch will land in each voxel, without storing any point data yet. `points.len()`
+        // is already known, so `point_voxel` reserves its exact final capacity immediately
+        // instead of growing point by point.
+        let mut point_voxel: Vec<usize> = Vec::with_capacity(points.len());
+        let mut additional: Vec<usize> = alloc::vec![0; self.voxels.len()];
+
+        for p in points {
+            let coords = grid::point_to_grid_coords(p, self.grid_lo, self.scale, grid_width);
+            let leaf_slot = grid::get_leaf(&mut self.tables, grid_width, coords)?;
+
+            let voxel_idx = if self.tables[leaf_slot] == I::SENTINEL {
+                let idx = self.voxels.len();
+                let idx_i = I::from_usize(idx).ok_or(grid::TooManyVoxels)?;
+                self.voxels.push(MutableVoxel::empty());
+                additional.push(0);
+                self.tables[leaf_slot] = idx_i;
+                idx
+            } else {
+                self.tables[leaf_slot].to_usize()
+            };
+
+            additional[voxel_idx] += 1;
+            point_voxel.push(voxel_idx);
+        }
+
+        // reserve exactly the extra capacity each touched voxel needs before writing any points,
+        // so every push in the second pass below lands in already-reserved space.
+        for (voxel, &extra) in self.voxels.iter_mut().zip(&additional) {
+            if extra > 0 {
+                for axis in &mut voxel.axes {
+                    axis.reserve(extra);
+                }
+            }
+        }
+
+        // second pass: actually store each point now that its voxel's storage is reserved.
+        for (p, &voxel_idx) in points.iter().zip(&point_voxel) {
+            let voxel = &mut self.voxels[voxel_idx];
+            voxel.aabb.insert(p);
+            for (axis, &x) in voxel.axes.iter_mut().zip(p) {
+                axis.push(x);
+            }
+            self.global_aabb.insert(p);
+        }
 
         Ok(())
     }
@@ -434,13 +487,15 @@ impl<const K: usize, A: Axis, I: Index> MutableMvt<K, A, I> {
 
     /// Insert every point in `points` into this `MutableMvt`.
     ///
-    /// Equivalent to calling [`Self::insert`] once per point, in order. If an error occurs partway
-    /// through, every point before the failing one has already been inserted (this method is not
-    /// transactional).
+    /// If this returns `Err`, none of `points` end up stored. A `TooManyVoxels` failure can still
+    /// leave a small, bounded number of harmless empty voxels behind internally, but will not
+    /// affect other observable behaviors of the structure.
     ///
     /// # Errors
     ///
-    /// See [`Self::insert`].
+    /// Returns [`InsertError::NonFinite`] if any point in `points` contains a non-finite value, or
+    /// [`InsertError::TooManyVoxels`] if inserting `points` would need more voxels or points than
+    /// the index type `I` can represent.
     ///
     /// # Examples
     ///
@@ -452,10 +507,10 @@ impl<const K: usize, A: Axis, I: Index> MutableMvt<K, A, I> {
     /// # Ok::<(), mvtable::InsertError>(())
     /// ```
     pub fn insert_points(&mut self, points: &[[A; K]]) -> Result<(), InsertError> {
-        for p in points {
-            self.insert(p)?;
+        if points.iter().any(|p| p.iter().any(|x| !x.is_finite())) {
+            return Err(InsertError::NonFinite);
         }
-        Ok(())
+        Ok(self.insert_initialized_batch(points)?)
     }
 
     /// Look up the voxel containing grid coordinates `coords`, if it is occupied.
@@ -782,6 +837,34 @@ mod tests {
     }
 
     #[test]
+    fn insert_points_too_many_voxels_leaves_mvt_unaffected() {
+        let mut mvt = MutableMvt::<2, f32, u8>::with_workspace([0.0, 0.0], [16.0, 16.0], 1.0, 0.0);
+        #[expect(
+            clippy::cast_precision_loss,
+            reason = "loop index is tiny relative to f32's mantissa"
+        )]
+        let cells: Vec<[f32; 2]> = (0..16_i32)
+            .flat_map(|x| (0..16_i32).map(move |y| [x as f32 + 0.5, y as f32 + 0.5]))
+            .collect();
+
+        // the first 200 cells fit comfortably under `u8`'s 254-voxel capacity.
+        mvt.insert_points(&cells[..200]).unwrap();
+        assert_eq!(mvt.points().count(), 200);
+
+        // the remaining 56 cells would push occupied-voxel count to 256, past capacity: the whole
+        // batch must be rejected.
+        let err = mvt.insert_points(&cells[200..]).unwrap_err();
+        assert_eq!(err, InsertError::TooManyVoxels);
+        assert_eq!(mvt.points().count(), 200);
+        for &[x, y] in &cells[200..] {
+            assert!(
+                !mvt.collides(&[x, y], 0.01),
+                "cell {x},{y} must not be stored"
+            );
+        }
+    }
+
+    #[test]
     fn non_cubic_workspace() {
         #[expect(
             clippy::cast_precision_loss,
@@ -1076,6 +1159,21 @@ mod tests {
         assert_eq!(err, InsertError::NonFinite);
         // the rejected point must not have been stored.
         assert_eq!(mvt.points().count(), 1);
+    }
+
+    #[test]
+    fn insert_points_rejects_batch_atomically() {
+        let mut mvt = MutableMvt::<2>::new(&[[0.0, 0.0]], 1.0);
+        // the non-finite point is in the middle of the batch: every point around it, not just the
+        // failing one, must be rejected along with it.
+        let err = mvt
+            .insert_points(&[[1.0, 1.0], [f32::NAN, 0.0], [2.0, 2.0]])
+            .unwrap_err();
+        assert_eq!(err, InsertError::NonFinite);
+        // none of the batch's points were stored, including the ones before the invalid one.
+        assert_eq!(mvt.points().count(), 1);
+        assert!(!mvt.collides(&[1.0, 1.0], 0.01));
+        assert!(!mvt.collides(&[2.0, 2.0], 0.01));
     }
 
     #[test]

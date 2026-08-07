@@ -64,6 +64,8 @@ pub fn point_to_grid_coords<A: Axis, const K: usize>(
 ///
 /// `tables` must already contain at least `grid_width[0]` entries (the root table) before the
 /// first call.
+///
+/// If this returns `Err`, `tables` is left exactly as it was before the call.
 pub fn get_leaf<I: Index, const K: usize>(
     tables: &mut Vec<I>,
     grid_width: [usize; K],
@@ -74,8 +76,9 @@ pub fn get_leaf<I: Index, const K: usize>(
         let slot = table_offset + coord;
         if tables[slot] == I::SENTINEL {
             let new_offset = tables.len();
+            let new_offset_i = I::from_usize(new_offset).ok_or(TooManyVoxels)?;
             tables.resize(new_offset + grid_width[level + 1], I::SENTINEL);
-            tables[slot] = I::from_usize(new_offset).ok_or(TooManyVoxels)?;
+            tables[slot] = new_offset_i;
         }
         table_offset = tables[slot].to_usize();
     }
