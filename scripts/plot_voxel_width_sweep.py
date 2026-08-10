@@ -18,6 +18,7 @@ from mbm_common import (
     ROBOT_LABELS,
     YLABEL_PAD,
     finish_single_panel,
+    legend_order,
     save_figure,
     style_legend,
 )
@@ -25,6 +26,17 @@ from mbm_common import (
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 RESULTS = ROOT / "data" / "voxel_width_sweep.csv"
 OUT = ROOT / "doc" / "voxel_width_sweep.svg"
+
+# Fixed top-to-bottom legend order.
+LEGEND_ORDER = [
+    ROBOT_LABELS["fetch"],
+    ROBOT_LABELS["panda"],
+    ROBOT_LABELS["ur5"],
+    ROBOT_LABELS["baxter"],
+    r"$r_\text{mobile}$",
+    r"$r_\text{max}$",
+    r"$r_\text{query}$",
+]
 
 
 def main() -> None:
@@ -130,16 +142,19 @@ def main() -> None:
     extra_handles, extra_labels = [], []
     if mobile_max_handle is not None:
         extra_handles.append(mobile_max_handle)
-        extra_labels.append("Max mobile radius")
+        extra_labels.append(r"$r_\text{mobile}$")
     if robot_max_handle is not None:
         extra_handles.append(robot_max_handle)
-        extra_labels.append("Max robot radius")
+        extra_labels.append(r"$r_\text{max}$")
     if true_max_handle is not None:
         extra_handles.append(true_max_handle)
-        extra_labels.append("Max query radius")
+        extra_labels.append(r"$r_\text{query}$")
 
     finish_single_panel(ax, "Voxel width (cm)", yscale="linear")
-    style_legend(ax, [*line_handles, *extra_handles], [*line_labels, *extra_labels])
+    handles, labels = legend_order(
+        [*line_handles, *extra_handles], [*line_labels, *extra_labels], LEGEND_ORDER
+    )
+    style_legend(ax, handles, labels)
     thin_tick_labels(ax.yaxis)
     fig.tight_layout()
     save_figure(fig, OUT)
