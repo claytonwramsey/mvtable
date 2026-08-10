@@ -2,6 +2,7 @@
 name = "mbm-extract"
 version = "0.1.0"
 edition = "2024"
+publish = false
 
 [dependencies]
 carom = { git = "ssh://git@github.com/KavrakiLab/rumple.git", version = "0.1.0", features = [
