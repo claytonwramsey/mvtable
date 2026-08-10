@@ -30,6 +30,7 @@ import seaborn as sns
 from mbm_common import (
     STRUCTURE_COLORS,
     YLABEL_PAD,
+    legend_order,
     save_figure,
     style_legend,
     trim_spines_to_data,
@@ -186,19 +187,15 @@ def _draw_scatter_panel(
     # round-number tick. Also gives the log axes plain decimal tick labels ("100", not "10^2").
     trim_spines_to_data(ax, xlim=(x_lo, x_hi), ylim=(y_lo, y_hi))
 
-    handles, labels = ax.get_legend_handles_labels()
-    # The equal-time reference line is a guide, not a data series, so it reads last rather than
-    # wherever it happened to be drawn.
-    order = sorted(range(len(labels)), key=lambda i: labels[i] == "Equal time")
+    # Hand-picked legend order: the plotted series in the order `groups` was given (the caller's
+    # `--structures` order), then the equal-time reference line last since it's a guide, not a
+    # data series.
+    order = [label for label, *_ in groups] + ["Equal time"]
+    handles, labels = legend_order(*ax.get_legend_handles_labels(), order)
     # The lower-right corner of the view sits below the equal-time diagonal, where CAPT/MVT are
     # consistently slower than the primitive baseline and the scatter is sparse - an inset legend
     # there doesn't cover any real data.
-    style_legend(
-        ax,
-        [handles[i] for i in order],
-        [labels[i] for i in order],
-        loc="lower right",
-    )
+    style_legend(ax, handles, labels, loc="lower right")
     return True
 
 

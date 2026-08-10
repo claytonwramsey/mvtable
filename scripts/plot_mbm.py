@@ -64,14 +64,27 @@ SIMD_LEGEND_LABEL = "SIMD"
 # entry marks a linestyle (dashed = SIMD) rather than any one series.
 SIMD_LEGEND_COLOR = "#1A1A1A"
 
-# Fixed top-to-bottom legend order for the query panel - kiddo first since it's the only
-# non-SIMD-capable baseline, then CAPT, then the three MVT variants, then the generic SIMD entry.
-QUERY_LEGEND_ORDER = [
-    LABELS["kiddo"],
+# Fixed top-to-bottom legend order, hand-picked per panel.
+CONSTRUCTION_LEGEND_ORDER = [
     LABELS["capt"],
+    LABELS["kiddo"],
+    LABELS["mvtable_mutable"],
+    LABELS["mvtable"],
+    LABELS["mvt_cpp"],
+]
+MEMORY_LEGEND_ORDER = [
+    LABELS["capt"],
+    LABELS["kiddo"],
     LABELS["mvtable"],
     LABELS["mvtable_mutable"],
     LABELS["mvt_cpp"],
+]
+QUERY_LEGEND_ORDER = [
+    LABELS["kiddo"],
+    LABELS["capt"],
+    LABELS["mvt_cpp"],
+    LABELS["mvtable"],
+    LABELS["mvtable_mutable"],
     SIMD_LEGEND_LABEL,
 ]
 
@@ -201,15 +214,10 @@ def save_single_panel(
     xlabel: str,
     out: pathlib.Path,
     crop: bool,
-    pin_legend_first: str | None = None,
-    legend_fixed_order: list[str] | None = None,
+    legend_order_labels: list[str],
 ) -> None:
     finish_single_panel(ax, xlabel, xtick_step=20000)
-    handles, labels = legend_order(
-        *ax.get_legend_handles_labels(),
-        pin_first=pin_legend_first,
-        fixed_order=legend_fixed_order,
-    )
+    handles, labels = legend_order(*ax.get_legend_handles_labels(), legend_order_labels)
     style_legend(ax, handles, labels)
     fig.tight_layout()
     save_figure(fig, out, crop=crop)
@@ -235,6 +243,7 @@ def main() -> None:
         xlabel,
         args.out_prefix.parent / f"{args.out_prefix.name}_construction.svg",
         crop,
+        legend_order_labels=CONSTRUCTION_LEGEND_ORDER,
     )
 
     # memory consumption
@@ -248,7 +257,7 @@ def main() -> None:
         xlabel,
         args.out_prefix.parent / f"{args.out_prefix.name}_memory.svg",
         crop,
-        pin_legend_first=LABELS["capt"],
+        legend_order_labels=MEMORY_LEGEND_ORDER,
     )
 
     # query time (all queries - colliding and non-colliding together)
@@ -267,7 +276,7 @@ def main() -> None:
         xlabel,
         args.out_prefix.parent / f"{args.out_prefix.name}_query.svg",
         crop,
-        legend_fixed_order=QUERY_LEGEND_ORDER,
+        legend_order_labels=QUERY_LEGEND_ORDER,
     )
 
 

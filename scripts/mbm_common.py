@@ -289,39 +289,15 @@ def finish_single_panel(
     trim_spines_to_data(ax)
 
 
-def legend_order(
-    handles, labels, pin_first: str | None = None, fixed_order: list[str] | None = None
-):
-    """Reorder legend entries to match the plotted lines' relative vertical order at the left
-    edge of the plot (where a left-to-right reader looks first), so e.g. the highest series reads
-    first/top in the legend rather than in a fixed structure order.
-
-    `pin_first`, if given, forces that label to the top regardless of its left-edge position -
-    useful when a series starts close to the pack at the smallest x value but consistently leads
-    or trails for nearly the whole plot, so top-of-legend is the more honest read than "whatever's
-    highest at x=0".
-
-    `fixed_order`, if given, replaces height-based ordering entirely with this explicit sequence
-    of labels - useful when the intended reading order doesn't track well enough with the lines'
-    relative height at any single x position to trust automatic ordering. Mutually exclusive with
-    `pin_first`."""
-    if fixed_order is not None:
-        order = sorted(
-            range(len(handles)),
-            key=lambda i: (
-                fixed_order.index(labels[i])
-                if labels[i] in fixed_order
-                else len(fixed_order)
-            ),
-        )
-    else:
-        order = sorted(
-            range(len(handles)), key=lambda i: handles[i].get_ydata()[0], reverse=True
-        )
-        if pin_first is not None:
-            order = sorted(order, key=lambda i: labels[i] != pin_first)
-
-    return [handles[i] for i in order], [labels[i] for i in order]
+def legend_order(handles, labels, order: list[str]):
+    """Reorder legend entries to the sequence of labels in `order`, so each plot's caller
+    decides the reading order. Any label not listed in `order` keeps its relative position
+    but sorts after every listed label."""
+    indices = sorted(
+        range(len(handles)),
+        key=lambda i: order.index(labels[i]) if labels[i] in order else len(order),
+    )
+    return [handles[i] for i in indices], [labels[i] for i in indices]
 
 
 def style_legend(ax, handles, labels, **kwargs):
