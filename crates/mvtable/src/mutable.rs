@@ -641,6 +641,12 @@ impl<const K: usize, A: AxisSimdElement, I: Index> MutableMvt<K, A, I> {
     /// Determine whether any sphere in a SIMD batch of `L` spheres intersects a point in this
     /// table.
     ///
+    /// # Stability
+    ///
+    /// To use this function, you must enable the `simd` feature for this crate and also use the
+    /// nightly Rust compiler. Since it depends on nightly Rust, this method is inherently unstable,
+    /// and may be broken in the future.
+    ///
     /// # Examples
     ///
     /// ```

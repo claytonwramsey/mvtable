@@ -18,7 +18,7 @@
 //!
 //! The core data structure in this library is the [`Mvt`], a sparse voxel grid used for
 //! collision checking. [`Mvt`]s are polymorphic over dimension and floating-point type. On
-//! construction, they take in a list of points in a point cloud and an voxel width used
+//! construction, they take in a list of points in a point cloud and a voxel width used
 //! to size the grid's voxels.
 //!
 //! ```rust
@@ -47,20 +47,22 @@
 //!
 //! [`Mvt`] is immutable once built. If you need to insert new points after construction, use
 //! [`MutableMvt`] instead, which supports [`MutableMvt::insert`]/[`MutableMvt::insert_points`] at
-//! some cost to query performance.
+//! some cost to memory usage and construction time; see [`MutableMvt`]'s documentation for
+//! details.
 //!
 //! ## Optional features
 //!
-//! This crate exposes one feature, `simd`, which enables a SIMD-parallel interface for querying
-//! [`Mvt`]s. The `simd` feature requires nightly Rust and therefore should be considered
-//! unstable. This enables the function `Mvt::collides_simd`, a parallel collision checker for
-//! batches of search queries.
+//! Besides the default-enabled `std` feature, this crate exposes one opt-in feature, `simd`,
+//! which enables a SIMD-parallel interface for querying [`Mvt`]s. The `simd` feature requires
+//! nightly Rust and therefore should be considered unstable. This enables the function
+//! `Mvt::collides_simd`, a parallel collision checker for batches of search queries.
 #![cfg_attr(not(feature = "std"), no_std)]
 #![cfg_attr(feature = "simd", feature(portable_simd))]
 #![warn(clippy::pedantic, clippy::nursery)]
 #![warn(clippy::allow_attributes, reason = "prefer expect over allow")]
-#![cfg_attr(doc, feature(rustdoc_missing_doc_code_examples))]
-#![warn(missing_docs, rustdoc::missing_doc_code_examples)]
+#![cfg_attr(docsrs, feature(rustdoc_missing_doc_code_examples))]
+#![warn(missing_docs)]
+#![cfg_attr(docsrs, warn(rustdoc::missing_doc_code_examples))]
 
 extern crate alloc;
 
@@ -112,12 +114,12 @@ pub trait Axis:
     const NEG_INFINITY: Self;
 
     #[must_use]
-    #[expect(rustdoc::missing_doc_code_examples)]
+    #[cfg_attr(docsrs, expect(rustdoc::missing_doc_code_examples))]
     /// Determine whether this value is finite.
     fn is_finite(self) -> bool;
 
     #[must_use]
-    #[expect(rustdoc::missing_doc_code_examples)]
+    #[cfg_attr(docsrs, expect(rustdoc::missing_doc_code_examples))]
     /// Compute the square of this value.
     fn square(self) -> Self;
 
@@ -138,13 +140,13 @@ pub trait Axis:
     fn to_index(self) -> usize;
 
     #[must_use]
-    #[expect(rustdoc::missing_doc_code_examples)]
+    #[cfg_attr(docsrs, expect(rustdoc::missing_doc_code_examples))]
     /// Convert a grid width into an axis value.
     fn from_usize(x: usize) -> Self;
 }
 
 #[cfg(feature = "simd")]
-#[expect(rustdoc::missing_doc_code_examples)]
+#[cfg_attr(docsrs, expect(rustdoc::missing_doc_code_examples))]
 /// A trait used for SIMD elements, implemented for the same types that implement [`Axis`].
 ///
 /// This trait (and [`Mvt::collides_simd`], which requires it) is only available when the `simd`
@@ -155,8 +157,11 @@ pub trait AxisSimdElement: SimdElement + Default + Axis {}
 /// A trait used for masks over SIMD vectors of [`Axis`] values, used for parallel querying on
 /// [`Mvt`]s.
 ///
-/// The interface for this trait should be considered unstable since the standard SIMD API may
-/// change with Rust versions.
+/// # Stability
+///
+/// To use this trait, you must enable the `simd` feature for this crate and also use the
+/// nightly Rust compiler. Since it depends on nightly Rust, this method is inherently unstable,
+/// and may be broken in the future.
 ///
 /// # Examples
 ///
@@ -174,17 +179,17 @@ pub trait AxisSimd<const L: usize>:
     Sized + SimdPartialOrd + Add<Output = Self> + AddAssign + Sub<Output = Self> + Mul<Output = Self>
 {
     #[must_use]
-    #[expect(rustdoc::missing_doc_code_examples)]
+    #[cfg_attr(docsrs, expect(rustdoc::missing_doc_code_examples))]
     /// Determine whether a mask contains any true elements.
     fn mask_any(mask: <Self as SimdPartialEq>::Mask) -> bool;
 
     #[must_use]
-    #[expect(rustdoc::missing_doc_code_examples)]
+    #[cfg_attr(docsrs, expect(rustdoc::missing_doc_code_examples))]
     /// Choose, lane by lane, between `true_val` and `false_val` according to `mask`.
     fn select(mask: <Self as SimdPartialEq>::Mask, true_val: Self, false_val: Self) -> Self;
 
     #[must_use]
-    #[expect(rustdoc::missing_doc_code_examples)]
+    #[cfg_attr(docsrs, expect(rustdoc::missing_doc_code_examples))]
     /// Convert a mask into a per-lane array of `bool`s.
     fn mask_to_array(mask: <Self as SimdPartialEq>::Mask) -> [bool; L];
 }
@@ -274,13 +279,13 @@ pub trait Index: Copy + PartialEq {
     const SENTINEL: Self;
 
     #[must_use]
-    #[expect(rustdoc::missing_doc_code_examples)]
+    #[cfg_attr(docsrs, expect(rustdoc::missing_doc_code_examples))]
     /// Convert a `usize` into an index, or `None` if it doesn't fit (or happens to equal
     /// [`Index::SENTINEL`]).
     fn from_usize(x: usize) -> Option<Self>;
 
     #[must_use]
-    #[expect(rustdoc::missing_doc_code_examples)]
+    #[cfg_attr(docsrs, expect(rustdoc::missing_doc_code_examples))]
     /// Convert this index back into a `usize`.
     fn to_usize(self) -> usize;
 }
