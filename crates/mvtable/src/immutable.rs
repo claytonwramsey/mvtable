@@ -288,6 +288,9 @@ impl<const K: usize, A: Axis, I: Index> Mvt<K, A, I> {
         grid_width: [usize; K],
     ) -> Result<VoxelAssignment<A, I, K>, NewMvtError> {
         let mut tables: Vec<I> = grid::new_root_table(grid_width);
+        // reserve the whole sparse hierarchy's worst-case size up front so `get_leaf` never grows
+        // `tables` a subtable at a time; see `grid::reserve_bound`'s docs for why that matters.
+        tables.reserve(grid::reserve_bound(grid_width, points.len()).saturating_sub(tables.len()));
         let mut point_voxel: Vec<I> = Vec::with_capacity(points.len());
         let mut voxel_counts: Vec<usize> = Vec::new();
         let mut voxel_aabbs: Vec<Aabb<A, K>> = Vec::new();
