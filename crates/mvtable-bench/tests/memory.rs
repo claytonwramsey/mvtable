@@ -57,7 +57,7 @@ fn kiddo_memory_used_grows_monotonically_across_bucket_boundaries() {
 
     let mut prev_bytes = 0;
     for n in [1, 2, 31, 32, 33, 63, 64, 65, 1000, 20_000] {
-        let tree = kiddo::ImmutableKdTree::<f32, 3>::new_from_slice(&points[..n]);
+        let tree = kiddo::ImmutableKdTree::<f32, 3>::new_from_slice(&points[..n]).unwrap();
         let bytes = mvtable_bench::kiddo_memory_used(&tree);
         assert!(
             bytes > prev_bytes,
@@ -72,6 +72,6 @@ fn kiddo_memory_used_grows_monotonically_across_bucket_boundaries() {
 /// panic and produces a positive byte count, rather than folding it into the monotonicity sweep.
 #[test]
 fn kiddo_memory_used_empty_tree_does_not_panic() {
-    let tree = kiddo::ImmutableKdTree::<f32, 3>::new_from_slice(&[]);
+    let tree = kiddo::ImmutableKdTree::<f32, 3>::new_from_slice(&[]).unwrap();
     assert!(mvtable_bench::kiddo_memory_used(&tree) > 0);
 }

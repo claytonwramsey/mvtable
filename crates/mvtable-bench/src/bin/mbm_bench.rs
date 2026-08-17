@@ -858,13 +858,14 @@ fn main() -> Result<(), Box<dyn Error>> {
                         }
                     }
 
-                    // `kiddo`: scalar only, no SIMD-batched query API.
+                    // `kiddo`
                     let ctx = RowContext {
                         structure: "kiddo",
                         ..ctx
                     };
                     let tic = Instant::now();
-                    let kdt = kiddo::ImmutableKdTree::<f32, 3>::new_from_slice(&points);
+                    let kdt = kiddo::ImmutableKdTree::<f32, 3>::new_from_slice(&points)
+                        .expect("bucket size 32 is soft-limited, so this can't fail");
                     write_construction_row(
                         &mut out,
                         ctx,

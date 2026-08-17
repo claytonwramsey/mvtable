@@ -4722,6 +4722,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "kiddo"
+version = "6.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ff11c2dae8221153cf5cc18c45f1f4ea0c5fff1b47ab8603f39b2d9202baae12"
+dependencies = [
+ "aligned-vec",
+ "array-init",
+ "az",
+ "cmov",
+ "generator",
+ "nonmax",
+ "num-traits",
+ "sorted-vec",
+ "tracing",
+ "yep-cache-line-size",
+]
+
+[[package]]
 name = "kittest"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5067,7 +5085,7 @@ dependencies = [
  "capt",
  "carom",
  "carom-core",
- "kiddo",
+ "kiddo 6.0.2",
  "mbm",
  "mbm-extract",
  "mvt-cpp",
@@ -5268,7 +5286,7 @@ version = "0.1.0"
 dependencies = [
  "capt",
  "criterion",
- "kiddo",
+ "kiddo 6.0.2",
  "mvt-cpp",
  "mvtable",
  "rand 0.10.2",
@@ -5412,6 +5430,12 @@ name = "nohash-hasher"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2bf50223579dc7cdcfb3bfcacf7069ff68243f8c363f62ffa99cf000a6b9c451"
+
+[[package]]
+name = "nonmax"
+version = "0.5.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "610a5acd306ec67f907abe5567859a3c693fb9886eb1f012ab8f2a47bef3db51"
 
 [[package]]
 name = "notify"
@@ -9586,7 +9610,7 @@ version = "0.1.0"
 source = "git+ssh://git@github.com/KavrakiLab/rumple.git#25b49c37f1b44e83cf1080f76cd27ec6ad56e55f"
 dependencies = [
  "const-primes",
- "kiddo",
+ "kiddo 5.3.2",
  "libm",
  "num-traits",
  "rand 0.10.2",
@@ -12201,6 +12225,16 @@ checksum = "818913695e83ece1f8d2a1c52d54484b7b46d0f9c06beeb2649b9da50d9b512d"
 dependencies = [
  "arraydeque",
  "hashlink",
+]
+
+[[package]]
+name = "yep-cache-line-size"
+version = "0.9.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "59dea97e5518f64cbb9468f2cd1ac59c9d0186eeb5ee6198d4bb8adfa1465499"
+dependencies = [
+ "libc",
+ "raw-cpuid",
 ]
 
 [[package]]

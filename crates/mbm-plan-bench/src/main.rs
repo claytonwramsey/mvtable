@@ -283,7 +283,11 @@ where
                 r_range,
                 r_filter,
                 "kiddo",
-                |pc, _| Ok(PointCloudWorld(ImmutableKdTree::new_from_slice(pc))),
+                |pc, _| {
+                    ImmutableKdTree::new_from_slice(pc)
+                        .map(PointCloudWorld)
+                        .map_err(Into::into)
+                },
                 csv,
             )?;
             run_one_backend(
