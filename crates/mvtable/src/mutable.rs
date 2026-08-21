@@ -412,6 +412,11 @@ impl<const K: usize, A: Axis, I: Index> MutableMvt<K, A, I> {
     /// each touched voxel's per-axis storage up front instead of growing it one point at a time.
     fn insert_initialized_batch(&mut self, points: &[[A; K]]) -> Result<(), grid::TooManyVoxels> {
         let grid_width: [usize; K] = array::from_fn(|k| self.grid_width[k].to_usize());
+        // reserve this batch's worst-case additional table size up front; see
+        // `grid::reserve_bound`'s docs for why that matters.
+        self.tables.reserve(
+            grid::reserve_bound(grid_width, points.len()).saturating_sub(self.tables.len()),
+        );
 
         // first pass: resolve each point's destination voxel and count how many points from this
         // batch will land in each voxel, without storing any point data yet. `points.len()`
