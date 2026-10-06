@@ -146,7 +146,9 @@ fn to_simd_batches<const L: usize>(
     queries: &[([f32; 3], f32)],
 ) -> Vec<([Simd<f32, L>; 3], Simd<f32, L>)> {
     queries
-        .chunks_exact(L)
+        .as_chunks::<L>()
+        .0
+        .iter()
         .map(|chunk| {
             let centers: [Simd<f32, L>; 3] = std::array::from_fn(|k| {
                 Simd::from_array(std::array::from_fn(|lane| chunk[lane].0[k]))

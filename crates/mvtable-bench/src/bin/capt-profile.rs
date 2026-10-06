@@ -83,7 +83,9 @@ fn main() {
     if simd_mode {
         const L: usize = 8;
         let batches: Vec<([Simd<f32, L>; 3], Simd<f32, L>)> = queries
-            .chunks_exact(L)
+            .as_chunks::<L>()
+            .0
+            .iter()
             .map(|ch| {
                 let centers: [Simd<f32, L>; 3] =
                     std::array::from_fn(|k| Simd::from_array(std::array::from_fn(|l| ch[l].0[k])));

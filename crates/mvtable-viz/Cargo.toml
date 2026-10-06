@@ -8,6 +8,3 @@ publish = false
 mvtable = { path = "../mvtable" }
 rerun = "0.34"
 rand = { version = "0.10", default-features = false, features = ["std", "std_rng"] }
-
-[[bin]]
-name = "grid_construction"

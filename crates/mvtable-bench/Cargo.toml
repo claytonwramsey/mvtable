@@ -17,6 +17,3 @@ criterion = { version = "0.8", default-features = false, features = ["cargo_benc
 [[bench]]
 name = "collide"
 harness = false
-
-[[bin]]
-name = "mbm_bench"
