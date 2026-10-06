@@ -132,6 +132,8 @@ pub struct Mvt<const K: usize, A = f32, I = u32> {
     scale: [A; K],
     /// The radius to add to every point to account for its physical volume.
     r_point: A,
+    /// The voxel width this MVT was constructed with.
+    voxel_width: A,
     /// A bounding box over every point in the cloud, used to quickly reject far-away queries.
     global_aabb: Aabb<A, K>,
     /// The table pool: the concatenation of the root table and every subsequently allocated
@@ -248,6 +250,7 @@ impl<const K: usize, A: Axis, I: Index> Mvt<K, A, I> {
                 grid_width: [I::ZERO; K],
                 scale: [A::ZERO; K],
                 r_point,
+                voxel_width,
                 global_aabb: Aabb::EMPTY,
                 tables: Box::default(),
                 voxels: Box::default(),
@@ -264,6 +267,7 @@ impl<const K: usize, A: Axis, I: Index> Mvt<K, A, I> {
             grid_width: grid_width_i,
             scale,
             r_point,
+            voxel_width,
             global_aabb,
             tables: assignment.tables.into_boxed_slice(),
             voxels: voxels.into_boxed_slice(),
@@ -480,6 +484,32 @@ impl<const K: usize, A: Axis, I: Index> Mvt<K, A, I> {
             let count = v.count.to_usize();
             (0..count).map(move |i| array::from_fn(|k| self.points[base + k * count + i]))
         })
+    }
+
+    #[must_use]
+    /// The radius added to every point, as passed at construction.
+    ///
+    /// ```
+    /// let mvt = mvtable::Mvt::<2>::with_point_radius(&[[0.0, 1.0]], 0.15, 0.02);
+    /// assert_eq!(mvt.r_point(), 0.02);
+    /// assert_eq!(mvtable::Mvt::<2>::new(&[[0.0, 1.0]], 0.15).r_point(), 0.0);
+    /// ```
+    pub const fn r_point(&self) -> A {
+        self.r_point
+    }
+
+    #[must_use]
+    /// The voxel width, as passed at construction.
+    ///
+    /// The grid rounds each axis to a whole number of voxels, so the voxels it builds can be
+    /// somewhat wider than this.
+    ///
+    /// ```
+    /// let mvt = mvtable::Mvt::<2>::with_point_radius(&[[0.0, 1.0], [0.3, 0.0]], 0.15, 0.02);
+    /// assert_eq!(mvt.voxel_width(), 0.15);
+    /// ```
+    pub const fn voxel_width(&self) -> A {
+        self.voxel_width
     }
 
     #[must_use]
