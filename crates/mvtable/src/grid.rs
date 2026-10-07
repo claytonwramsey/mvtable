@@ -91,27 +91,19 @@ pub fn new_root_table<I: Index, const K: usize>(grid_width: [usize; K]) -> Vec<I
     vec![I::SENTINEL; grid_width[0]]
 }
 
-/// A cheap, safe upper bound on how large the `tables` hierarchy (root plus every subtable
-/// [`get_leaf`] might allocate) can grow while assigning `n_points` points, without an extra pass
-/// over the points themselves.
+/// Return an upper bound on the number of entries [`get_leaf`] can append to `tables` while
+/// assigning `n_points` points to a grid of width `grid_width`.
 ///
-/// A subtable is created at most once per distinct coordinate prefix, so the number of new
-/// subtables at each level is bounded both by `n_points` (at most one new subtable per point) and
-/// by the number of parent slots that could hold them (at most one subtable per already-reachable
-/// slot); this tracks the tighter of the two at each level, so it stays small for sparse point
-/// clouds and only approaches the fully-dense grid size when the cloud is dense enough to need it.
-///
-/// Used to [`Vec::reserve`] `tables`' capacity once up front, rather than letting [`get_leaf`]
-/// discover the need for more space one subtable at a time: on allocators where growing a large
-/// `Vec` incrementally means repeated real (re)allocations rather than cheap in-place growth,
-/// paying for one allocation up front is dramatically cheaper than paying for many small ones.
+/// Each point creates at most one new subtable per level.
+/// Each slot in a parent table holds at most one subtable.
+/// The bound takes the smaller of these two limits at every level, so it stays small for sparse
+/// clouds and approaches the size of the fully dense grid only for dense ones.
 #[must_use]
-pub fn reserve_bound<const K: usize>(grid_width: [usize; K], n_points: usize) -> usize {
-    let mut total = grid_width[0];
+pub fn subtable_capacity_bound<const K: usize>(grid_width: [usize; K], n_points: usize) -> usize {
+    let mut total = 0usize;
     let mut reachable = grid_width[0];
     for &width in &grid_width[1..] {
-        let distinct = reachable.min(n_points);
-        reachable = distinct.saturating_mul(width);
+        reachable = reachable.min(n_points).saturating_mul(width);
         total = total.saturating_add(reachable);
     }
     total
