@@ -345,13 +345,10 @@ impl<A: Axis, const K: usize> Aabb<A, K> {
 
     /// Grow this bounding box so that it also contains `p`.
     fn insert(&mut self, p: &[A; K]) {
+        // selects instead of branches, since whether a point extends the box is unpredictable
         for ((l, h), &x) in self.lo.iter_mut().zip(&mut self.hi).zip(p) {
-            if x < *l {
-                *l = x;
-            }
-            if x > *h {
-                *h = x;
-            }
+            *l = if x < *l { x } else { *l };
+            *h = if x > *h { x } else { *h };
         }
     }
 
