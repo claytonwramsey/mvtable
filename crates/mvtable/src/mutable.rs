@@ -415,9 +415,6 @@ impl<const K: usize, A: Axis, I: Index> MutableMvt<K, A, I> {
     /// each touched voxel's per-axis storage up front instead of growing it one point at a time.
     fn insert_initialized_batch(&mut self, points: &[[A; K]]) -> Result<(), grid::TooManyVoxels> {
         let grid_width: [usize; K] = array::from_fn(|k| self.grid_width[k].to_usize());
-        // Reserving the worst case once is cheaper than growing `tables` one subtable at a time.
-        self.tables
-            .reserve(grid::subtable_capacity_bound(grid_width, points.len()));
 
         // first pass: resolve each point's destination voxel and count how many points from this
         // batch will land in each voxel, without storing any point data yet. `points.len()`
@@ -426,24 +423,25 @@ impl<const K: usize, A: Axis, I: Index> MutableMvt<K, A, I> {
         let mut point_voxel: Vec<usize> = Vec::with_capacity(points.len());
         let mut additional: Vec<usize> = alloc::vec![0; self.voxels.len()];
 
-        for p in points {
-            let coords = grid::point_to_grid_coords(p, self.grid_lo, self.scale, grid_width);
-            let leaf_slot = grid::get_leaf(&mut self.tables, grid_width, coords)?;
-
-            let voxel_idx = if self.tables[leaf_slot] == I::SENTINEL {
-                let idx = self.voxels.len();
-                let idx_i = I::from_usize(idx).ok_or(grid::TooManyVoxels)?;
-                self.voxels.push(MutableVoxel::empty());
-                additional.push(0);
-                self.tables[leaf_slot] = idx_i;
-                idx
-            } else {
-                self.tables[leaf_slot].to_usize()
-            };
-
-            additional[voxel_idx] += 1;
-            point_voxel.push(voxel_idx);
-        }
+        let voxels = &mut self.voxels;
+        grid::assign_points(
+            &mut self.tables,
+            points,
+            self.grid_lo,
+            self.scale,
+            grid_width,
+            |_, slot| {
+                if *slot == I::SENTINEL {
+                    *slot = I::from_usize(voxels.len()).ok_or(grid::TooManyVoxels)?;
+                    voxels.push(MutableVoxel::empty());
+                    additional.push(0);
+                }
+                let voxel_idx = slot.to_usize();
+                additional[voxel_idx] += 1;
+                point_voxel.push(voxel_idx);
+                Ok::<_, grid::TooManyVoxels>(())
+            },
+        )?;
 
         // reserve exactly the extra capacity each touched voxel needs before writing any points,
         // so every push in the second pass below lands in already-reserved space.

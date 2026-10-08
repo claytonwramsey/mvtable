@@ -21,6 +21,18 @@ struct Voxel<A, I, const K: usize> {
     count: I,
 }
 
+/// A voxel under construction, accumulated by [`Mvt::build_hierarchy`] and consumed by
+/// [`Mvt::flatten_points`].
+#[derive(Clone, Copy)]
+struct VoxelBuild<A, const K: usize> {
+    /// The bounding box over the points assigned to this voxel so far.
+    aabb: Aabb<A, K>,
+    /// The number of points assigned to this voxel.
+    count: usize,
+    /// During [`Mvt::flatten_points`], the pool position where this voxel's next point goes.
+    cursor: usize,
+}
+
 /// The intermediate result of [`Mvt::build_hierarchy`].
 struct VoxelAssignment<A, I, const K: usize> {
     /// The sparse table hierarchy, in the same format as [`Mvt::tables`].
@@ -28,10 +40,8 @@ struct VoxelAssignment<A, I, const K: usize> {
     /// `point_voxel[i]` is the voxel (by first-encounter index) that `points[i]` was assigned to,
     /// for the same `points` passed to [`Mvt::build_hierarchy`].
     point_voxel: Vec<I>,
-    /// The number of points assigned to each voxel so far, indexed by first-encounter order.
-    voxel_counts: Vec<usize>,
-    /// The bounding box accumulated so far for each voxel, indexed by first-encounter order.
-    voxel_aabbs: Vec<Aabb<A, K>>,
+    /// Every voxel, indexed by first-encounter order.
+    voxels: Vec<VoxelBuild<A, K>>,
 }
 
 /// The result of [`Mvt::flatten_points`]: metadata for each voxel, together with the point
@@ -261,7 +271,12 @@ impl<const K: usize, A: Axis, I: Index> Mvt<K, A, I> {
         let (grid_width, grid_width_i, scale) = grid::size_grid(&global_aabb, voxel_width)?;
 
         let assignment = Self::build_hierarchy(points, global_aabb.lo, scale, grid_width)?;
-        let (voxels, pool) = Self::flatten_points(points, &assignment)?;
+        let VoxelAssignment {
+            tables,
+            point_voxel,
+            voxels,
+        } = assignment;
+        let (voxels, pool) = Self::flatten_points(points, &point_voxel, voxels)?;
 
         Ok(Self {
             grid_width: grid_width_i,
@@ -269,7 +284,7 @@ impl<const K: usize, A: Axis, I: Index> Mvt<K, A, I> {
             r_point,
             voxel_width,
             global_aabb,
-            tables: assignment.tables.into_boxed_slice(),
+            tables: tables.into_boxed_slice(),
             voxels: voxels.into_boxed_slice(),
             points: pool.into_boxed_slice(),
         })
@@ -292,38 +307,30 @@ impl<const K: usize, A: Axis, I: Index> Mvt<K, A, I> {
         grid_width: [usize; K],
     ) -> Result<VoxelAssignment<A, I, K>, NewMvtError> {
         let mut tables: Vec<I> = grid::new_root_table(grid_width);
-        // Reserving the worst case once is cheaper than growing `tables` one subtable at a time.
-        tables.reserve(grid::subtable_capacity_bound(grid_width, points.len()));
         let mut point_voxel: Vec<I> = Vec::with_capacity(points.len());
-        let mut voxel_counts: Vec<usize> = Vec::new();
-        let mut voxel_aabbs: Vec<Aabb<A, K>> = Vec::new();
+        let mut voxels: Vec<VoxelBuild<A, K>> =
+            Vec::with_capacity(grid::max_voxels(grid_width, points.len()));
 
-        for p in points {
-            let coords = grid::point_to_grid_coords(p, lo, scale, grid_width);
-            let leaf_slot = grid::get_leaf(&mut tables, grid_width, coords)?;
-
-            let voxel_i = if tables[leaf_slot] == I::SENTINEL {
-                let idx = voxel_counts.len();
-                voxel_counts.push(0);
-                voxel_aabbs.push(Aabb::EMPTY);
-                let idx_i = I::from_usize(idx).ok_or(NewMvtError::TooManyVoxels)?;
-                tables[leaf_slot] = idx_i;
-                idx_i
-            } else {
-                tables[leaf_slot]
-            };
-
-            let voxel_idx = voxel_i.to_usize();
-            voxel_counts[voxel_idx] += 1;
-            voxel_aabbs[voxel_idx].insert(p);
-            point_voxel.push(voxel_i);
-        }
+        grid::assign_points(&mut tables, points, lo, scale, grid_width, |p, slot| {
+            if *slot == I::SENTINEL {
+                *slot = I::from_usize(voxels.len()).ok_or(NewMvtError::TooManyVoxels)?;
+                voxels.push(VoxelBuild {
+                    aabb: Aabb::EMPTY,
+                    count: 0,
+                    cursor: 0,
+                });
+            }
+            let voxel = &mut voxels[slot.to_usize()];
+            voxel.count += 1;
+            voxel.aabb.insert(p);
+            point_voxel.push(*slot);
+            Ok::<_, NewMvtError>(())
+        })?;
 
         Ok(VoxelAssignment {
             tables,
             point_voxel,
-            voxel_counts,
-            voxel_aabbs,
+            voxels,
         })
     }
 
@@ -332,44 +339,37 @@ impl<const K: usize, A: Axis, I: Index> Mvt<K, A, I> {
     /// scatter each point directly into it.
     fn flatten_points(
         points: &[[A; K]],
-        assignment: &VoxelAssignment<A, I, K>,
+        point_voxel: &[I],
+        mut builds: Vec<VoxelBuild<A, K>>,
     ) -> Result<FlattenedVoxels<A, I, K>, NewMvtError> {
-        let VoxelAssignment {
-            point_voxel,
-            voxel_counts,
-            voxel_aabbs,
-            ..
-        } = assignment;
-        let mut offsets = Vec::with_capacity(voxel_counts.len());
         let mut offset = 0usize;
-        for &count in voxel_counts {
-            offsets.push(offset);
-            offset += count * K;
+        for build in &mut builds {
+            build.cursor = offset;
+            offset += build.count * K;
         }
         let mut pool = vec![A::ZERO; offset];
 
-        // scatter each point straight into its voxel's slice of the pool; `cursors` tracks how
-        // many of each voxel's points have been written so far.
-        let mut cursors = vec![0usize; voxel_counts.len()];
+        // scatter each point straight into its voxel's slice of the pool
         for (p, &voxel_i) in points.iter().zip(point_voxel) {
-            let voxel_idx = voxel_i.to_usize();
-            let base = offsets[voxel_idx];
-            let count = voxel_counts[voxel_idx];
-            let i = cursors[voxel_idx];
+            let build = &mut builds[voxel_i.to_usize()];
             for k in 0..K {
-                pool[base + k * count + i] = p[k];
+                pool[build.cursor + k * build.count] = p[k];
             }
-            cursors[voxel_idx] = i + 1;
+            build.cursor += 1;
         }
 
-        let mut voxels = Vec::with_capacity(voxel_counts.len());
-        for (voxel_idx, &count) in voxel_counts.iter().enumerate() {
-            voxels.push(Voxel {
-                aabb: voxel_aabbs[voxel_idx],
-                offset: I::from_usize(offsets[voxel_idx]).ok_or(NewMvtError::TooManyVoxels)?,
-                count: I::from_usize(count).ok_or(NewMvtError::TooManyVoxels)?,
-            });
-        }
+        let voxels = builds
+            .iter()
+            .map(|build| {
+                // every point has been scattered, so `cursor` sits `count` past the voxel's start
+                let offset = build.cursor - build.count;
+                Ok(Voxel {
+                    aabb: build.aabb,
+                    offset: I::from_usize(offset).ok_or(NewMvtError::TooManyVoxels)?,
+                    count: I::from_usize(build.count).ok_or(NewMvtError::TooManyVoxels)?,
+                })
+            })
+            .collect::<Result<_, NewMvtError>>()?;
 
         Ok((voxels, pool))
     }

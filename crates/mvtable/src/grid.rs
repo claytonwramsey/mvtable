@@ -108,3 +108,85 @@ pub fn subtable_capacity_bound<const K: usize>(grid_width: [usize; K], n_points:
     }
     total
 }
+
+/// Return an upper bound on the number of voxels that `n_points` points can occupy in a grid of
+/// width `grid_width`.
+#[must_use]
+pub fn max_voxels<const K: usize>(grid_width: [usize; K], n_points: usize) -> usize {
+    grid_width
+        .iter()
+        .try_fold(1usize, |acc, &w| acc.checked_mul(w))
+        .map_or(n_points, |cells| cells.min(n_points))
+}
+
+/// The largest number of grid cells per point for which [`assign_points`] uses a flat array during
+/// construction.
+const FLAT_ARRAY_CELLS_PER_POINT: usize = 8;
+
+/// Map grid coordinates `coords` to a unique index in `0..grid_width.iter().product()`.
+fn linearize<const K: usize>(coords: [usize; K], grid_width: [usize; K]) -> usize {
+    coords
+        .iter()
+        .zip(&grid_width)
+        .fold(0, |acc, (&c, &w)| acc * w + c)
+}
+
+/// Find the leaf-level table slot for every point in `points`, in order, and call `assign` on
+/// each point together with its slot.
+///
+/// `assign` must leave the slot holding the index of the voxel the point belongs to.
+/// A slot holding [`Index::SENTINEL`] means the point's voxel does not exist yet.
+///
+/// `tables` must already contain at least `grid_width[0]` entries, as for [`get_leaf`].
+/// On success, `tables` holds the full hierarchy for every point in `points`.
+pub fn assign_points<A: Axis, I: Index, E: From<TooManyVoxels>, const K: usize>(
+    tables: &mut Vec<I>,
+    points: &[[A; K]],
+    lo: [A; K],
+    scale: [A; K],
+    grid_width: [usize; K],
+    mut assign: impl FnMut(&[A; K], &mut I) -> Result<(), E>,
+) -> Result<(), E> {
+    let n_cells = grid_width
+        .iter()
+        .try_fold(1usize, |acc, &w| acc.checked_mul(w))
+        .filter(|&cells| cells <= FLAT_ARRAY_CELLS_PER_POINT.saturating_mul(points.len()))
+        // the flat array only knows about voxels created here, so it needs an empty hierarchy
+        .filter(|_| tables.len() == grid_width[0] && tables.iter().all(|&t| t == I::SENTINEL));
+
+    let Some(n_cells) = n_cells else {
+        // Reserving the worst case once is cheaper than growing `tables` one subtable at a time.
+        tables.reserve(subtable_capacity_bound(grid_width, points.len()));
+        for p in points {
+            let leaf_slot = get_leaf(
+                tables,
+                grid_width,
+                point_to_grid_coords(p, lo, scale, grid_width),
+            )?;
+            assign(p, &mut tables[leaf_slot])?;
+        }
+        return Ok(());
+    };
+
+    // The grid is small enough to use a flat array during construction, with one slot per cell.
+    // Each point costs a single lookup rather than a walk down the sparse hierarchy.
+    // The hierarchy is then built once per voxel in first-encounter order, so subtables are
+    // allocated in first-encounter order.
+    let mut cell_slots = vec![I::SENTINEL; n_cells];
+    let mut new_cells: Vec<[usize; K]> = Vec::with_capacity(max_voxels(grid_width, points.len()));
+    for p in points {
+        let coords = point_to_grid_coords(p, lo, scale, grid_width);
+        let slot = &mut cell_slots[linearize(coords, grid_width)];
+        if *slot == I::SENTINEL {
+            new_cells.push(coords);
+        }
+        assign(p, slot)?;
+    }
+
+    tables.reserve(subtable_capacity_bound(grid_width, new_cells.len()));
+    for coords in new_cells {
+        let leaf_slot = get_leaf(tables, grid_width, coords)?;
+        tables[leaf_slot] = cell_slots[linearize(coords, grid_width)];
+    }
+    Ok(())
+}
