@@ -19,11 +19,14 @@ use std::{
     io::{BufRead, BufReader, BufWriter, Read, Write},
     path::{Path, PathBuf},
     simd::{Simd, cmp::SimdPartialEq},
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use capt::AxisSimd;
-use mvtable_bench::{SimdStructure, Structure, filter};
+use mvtable_bench::{
+    SimdStructure, Structure, filter,
+    timing::{round_robin_medians, time_build},
+};
 use rand::{SeedableRng, rngs::SmallRng};
 
 /// Maximum number of queries to try against the scalar/sequential trace for a single workload
@@ -344,12 +347,17 @@ fn bench_simd<S: SimdStructure<3>>(
     })
 }
 
+/// Record the median construction time from [`ConstructionTimes`] as a `construction` metric
+/// row.
 fn write_construction_row(
     out: &mut impl Write,
     ctx: RowContext,
     n_queries: usize,
-    ns: f64,
+    build_time: Option<Duration>,
 ) -> Result<(), Box<dyn Error>> {
+    let build_time =
+        build_time.ok_or("construction succeeded once but failed while being timed")?;
+    let ns = build_time.as_secs_f64() * 1e9;
     writeln!(
         out,
         "{},{},{},{},{n_queries},construction,1,{ns}",
@@ -370,6 +378,50 @@ fn write_memory_row(
         ctx.structure, ctx.workload, ctx.filter_name, ctx.n_points,
     )?;
     Ok(())
+}
+
+/// Median construction time of every structure on each of one workload's filtered clouds.
+///
+/// Times are measured with [`round_robin_medians`], so no structure ever builds the same cloud
+/// twice in a row.
+/// Entry `i` of each field corresponds to cloud `i`, and is `None` if that structure cannot be
+/// built from that cloud.
+struct ConstructionTimes {
+    mvtable: Vec<Option<Duration>>,
+    mvtable_mutable: Vec<Option<Duration>>,
+    capt: Vec<Option<Duration>>,
+    mvt_cpp: Vec<Option<Duration>>,
+    kiddo: Vec<Option<Duration>>,
+}
+
+impl ConstructionTimes {
+    fn measure(
+        clouds: &[(&str, f32, Vec<[f32; 3]>)],
+        voxel_width: f32,
+        r_range: (f32, f32),
+        mvt_cpp_r_range: (f32, f32),
+    ) -> Self {
+        let points = |i: usize| clouds[i].2.as_slice();
+        Self {
+            mvtable: round_robin_medians(clouds.len(), |i| {
+                Some(time_build(|| mvtable::Mvt::<3, f32>::new(points(i), voxel_width)).0)
+            }),
+            mvtable_mutable: round_robin_medians(clouds.len(), |i| {
+                Some(time_build(|| mvtable::MutableMvt::<3, f32>::new(points(i), voxel_width)).0)
+            }),
+            capt: round_robin_medians(clouds.len(), |i| {
+                Some(time_build(|| capt::Capt::<3, f32, u32>::new(points(i), r_range, SIMD_L)).0)
+            }),
+            mvt_cpp: round_robin_medians(clouds.len(), |i| {
+                let (t, built) =
+                    time_build(|| mvt_cpp::MvtCpp::try_new(points(i), mvt_cpp_r_range));
+                built.is_ok().then_some(t)
+            }),
+            kiddo: round_robin_medians(clouds.len(), |i| {
+                Some(time_build(|| kiddo::ImmutableKdTree::<f32, 3>::new_from_slice(points(i))).0)
+            }),
+        }
+    }
 }
 
 /// A `(dataset, robot, scene_id)` triple from `data/manifest.csv`, identifying one extracted
@@ -672,18 +724,29 @@ fn main() -> Result<(), Box<dyn Error>> {
             let scalar_queries = &w.scalar_queries;
             let simd_batches = &w.simd_batches;
 
-            for &filter_name in &FILTER_NAMES {
-                for &scale in &filter_radius_scales {
-                    let points = apply_filter(filter_name, full_points, scale * r_min);
+            // Every filtered cloud for this workload, so construction can be timed round-robin.
+            let clouds: Vec<(&str, f32, Vec<[f32; 3]>)> = FILTER_NAMES
+                .iter()
+                .flat_map(|&filter_name| {
+                    filter_radius_scales.iter().map(move |&scale| {
+                        let points = apply_filter(filter_name, full_points, scale * r_min);
+                        (filter_name, scale, points)
+                    })
+                })
+                .filter(|(_, _, points)| !points.is_empty())
+                .collect();
+            let build_times =
+                ConstructionTimes::measure(&clouds, voxel_width, r_range, mvt_cpp_r_range);
+
+            for (cloud_idx, (filter_name, scale, points)) in clouds.iter().enumerate() {
+                let (filter_name, scale) = (*filter_name, *scale);
+                {
                     let n_points = points.len();
-                    if n_points == 0 {
-                        continue;
-                    }
 
                     // Ground-truth colliding/non-colliding partition for this point cloud,
                     // computed with `mvtable` itself. A batch counts as "colliding" if any of its
                     // lanes does, mirroring `collides_simd`'s any-of-batch semantics.
-                    let oracle = mvtable::Mvt::<3, f32>::new(&points, voxel_width);
+                    let oracle = mvtable::Mvt::<3, f32>::new(points, voxel_width);
                     let (colliding, non_colliding) = partition_indices(scalar_queries, |q| {
                         Structure::collides(&oracle, &q.center, q.r)
                     });
@@ -719,13 +782,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                         filter_name,
                         n_points,
                     };
-                    let tic = Instant::now();
-                    let mvt = mvtable::Mvt::<3, f32>::new(&points, voxel_width);
+                    let mvt = mvtable::Mvt::<3, f32>::new(points, voxel_width);
                     write_construction_row(
                         &mut out,
                         ctx,
                         n_queries,
-                        tic.elapsed().as_secs_f64() * 1e9,
+                        build_times.mvtable[cloud_idx],
                     )?;
                     write_memory_row(&mut out, ctx, mvt.memory_used())?;
                     bench_scalar(
@@ -751,13 +813,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                         structure: "mvtable_mutable",
                         ..ctx
                     };
-                    let tic = Instant::now();
-                    let mvt_mutable = mvtable::MutableMvt::<3, f32>::new(&points, voxel_width);
+                    let mvt_mutable = mvtable::MutableMvt::<3, f32>::new(points, voxel_width);
                     write_construction_row(
                         &mut out,
                         ctx,
                         n_queries,
-                        tic.elapsed().as_secs_f64() * 1e9,
+                        build_times.mvtable_mutable[cloud_idx],
                     )?;
                     write_memory_row(&mut out, ctx, mvt_mutable.memory_used())?;
                     bench_scalar(
@@ -786,14 +847,8 @@ fn main() -> Result<(), Box<dyn Error>> {
                         structure: "capt",
                         ..ctx
                     };
-                    let tic = Instant::now();
-                    let capt = capt::Capt::<3, f32, u32>::new(&points, r_range, SIMD_L);
-                    write_construction_row(
-                        &mut out,
-                        ctx,
-                        n_queries,
-                        tic.elapsed().as_secs_f64() * 1e9,
-                    )?;
+                    let capt = capt::Capt::<3, f32, u32>::new(points, r_range, SIMD_L);
+                    write_construction_row(&mut out, ctx, n_queries, build_times.capt[cloud_idx])?;
                     write_memory_row(&mut out, ctx, capt.memory_used())?;
                     bench_scalar(
                         &mut out,
@@ -815,12 +870,12 @@ fn main() -> Result<(), Box<dyn Error>> {
                     }
 
                     // mvt-cpp
-                    let tic = Instant::now();
                     // skip instances that would crash
                     'mvt_cpp: {
-                        let Ok(mvt_cpp_instance) =
-                            mvt_cpp::MvtCpp::try_new(&points, mvt_cpp_r_range)
-                        else {
+                        let (Ok(mvt_cpp_instance), Some(build_time)) = (
+                            mvt_cpp::MvtCpp::try_new(points, mvt_cpp_r_range),
+                            build_times.mvt_cpp[cloud_idx],
+                        ) else {
                             eprintln!(
                                 "skipping mvt_cpp for {label} [{filter_name} x{scale}] @ \
                                  {n_points} points: would overflow"
@@ -831,12 +886,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                             structure: "mvt_cpp",
                             ..ctx
                         };
-                        write_construction_row(
-                            &mut out,
-                            ctx,
-                            n_queries,
-                            tic.elapsed().as_secs_f64() * 1e9,
-                        )?;
+                        write_construction_row(&mut out, ctx, n_queries, Some(build_time))?;
                         write_memory_row(&mut out, ctx, mvt_cpp_instance.memory_used())?;
                         bench_scalar(
                             &mut out,
@@ -863,15 +913,9 @@ fn main() -> Result<(), Box<dyn Error>> {
                         structure: "kiddo",
                         ..ctx
                     };
-                    let tic = Instant::now();
-                    let kdt = kiddo::ImmutableKdTree::<f32, 3>::new_from_slice(&points)
+                    let kdt = kiddo::ImmutableKdTree::<f32, 3>::new_from_slice(points)
                         .expect("bucket size 32 is soft-limited, so this can't fail");
-                    write_construction_row(
-                        &mut out,
-                        ctx,
-                        n_queries,
-                        tic.elapsed().as_secs_f64() * 1e9,
-                    )?;
+                    write_construction_row(&mut out, ctx, n_queries, build_times.kiddo[cloud_idx])?;
                     write_memory_row(&mut out, ctx, mvtable_bench::kiddo_memory_used(&kdt))?;
                     bench_scalar(
                         &mut out,

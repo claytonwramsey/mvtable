@@ -17,6 +17,7 @@ use kiddo::SquaredEuclidean;
 use rand::{Rng, RngExt};
 
 pub mod filter;
+pub mod timing;
 
 /// Radius of a robot's largest sphere that actually moves during planning, traced by hand from
 /// each robot's spherized URDF.

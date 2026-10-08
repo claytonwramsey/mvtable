@@ -6,7 +6,7 @@ use std::{
     fs::{self, File},
     io::{BufWriter, Write},
     path::{Path, PathBuf},
-    time::{Duration, Instant},
+    time::Duration,
 };
 
 use capt::Capt;
@@ -22,7 +22,10 @@ use mbm_plan_bench::{
 };
 use mvt_cpp::MvtCpp;
 use mvtable::{MutableMvt, Mvt};
-use mvtable_bench::filter::centervox_filter;
+use mvtable_bench::{
+    filter::centervox_filter,
+    timing::{round_robin_medians, time_build},
+};
 use nalgebra::{Isometry3, Vector3};
 use rand::{SeedableRng, rngs::SmallRng};
 
@@ -68,6 +71,60 @@ const BAXTER_VOXEL_WIDTH: f32 = 0.14;
 /// can't stall the whole unattended run.
 const MAX_SOLVE_TIME: Duration = Duration::from_secs(10);
 
+/// Median construction time of every backend on each scene of one dataset.
+///
+/// Times are measured with [`round_robin_medians`], so no backend ever builds the same scene twice
+/// in a row.
+/// Entry `i` of each field corresponds to scene `i`, and is `None` if that backend cannot be built
+/// for that scene.
+/// The SIMD and scalar variants of a backend build the same structure, so they share a field,
+/// except for `capt`, whose lane count changes what it builds.
+struct BuildTimes {
+    primitive: Vec<Option<Duration>>,
+    mvtable: Vec<Option<Duration>>,
+    mvtable_mutable: Vec<Option<Duration>>,
+    mvt_cpp: Vec<Option<Duration>>,
+    capt: Vec<Option<Duration>>,
+    capt_simd: Vec<Option<Duration>>,
+    kiddo: Vec<Option<Duration>>,
+}
+
+impl BuildTimes {
+    fn measure<const N: usize>(
+        scenes: &[(&Problem<N>, usize, Vec<[f32; 3]>)],
+        voxel_width: f32,
+        r_range: (f32, f32),
+        mvt_cpp_r_range: (f32, f32),
+    ) -> Self {
+        let n = scenes.len();
+        let points = |i: usize| scenes[i].2.as_slice();
+        Self {
+            primitive: round_robin_medians(n, |i| Some(time_build(|| scenes[i].0.world.clone()).0)),
+            mvtable: round_robin_medians(n, |i| {
+                Some(time_build(|| Mvt::<3, f32>::new(points(i), voxel_width)).0)
+            }),
+            mvtable_mutable: round_robin_medians(n, |i| {
+                Some(time_build(|| MutableMvt::<3, f32>::new(points(i), voxel_width)).0)
+            }),
+            mvt_cpp: round_robin_medians(n, |i| {
+                let (t, built) = time_build(|| MvtCpp::try_new(points(i), mvt_cpp_r_range));
+                built.is_ok().then_some(t)
+            }),
+            capt: round_robin_medians(n, |i| {
+                Some(time_build(|| Capt::<3, f32, u32>::new(points(i), r_range, 1)).0)
+            }),
+            capt_simd: round_robin_medians(n, |i| {
+                Some(time_build(|| Capt::<3, f32, u32>::new(points(i), r_range, 8)).0)
+            }),
+            kiddo: round_robin_medians(n, |i| {
+                let (t, built) =
+                    time_build(|| ImmutableKdTree::<f32, 3>::new_from_slice(points(i)));
+                built.is_ok().then_some(t)
+            }),
+        }
+    }
+}
+
 fn max_problems_per_dataset() -> usize {
     std::env::var("MBM_PLAN_BENCH_MAX_SCENES")
         .ok()
@@ -76,8 +133,10 @@ fn max_problems_per_dataset() -> usize {
 }
 
 /// Build `structure_name`'s backend from `filtered_points`, run the planner against it, and write
-/// one CSV row with the outcome (or log and return `Ok(())` without writing a row, if this
-/// particular backend/problem combination fails to construct or solve).
+/// one CSV row with the outcome and `construction`, the backend's median construction time from
+/// [`BuildTimes`].
+/// Logs and returns `Ok(())` without writing a row if this backend/problem combination fails to
+/// construct or solve.
 #[expect(
     clippy::too_many_arguments,
     reason = "internal driver, not a public API"
@@ -91,6 +150,7 @@ fn run_one_backend<R, W, const N: usize>(
     r_range: (f32, f32),
     r_filter: f32,
     name: &str,
+    construction: Option<Duration>,
     // An `Err` means "skip this backend for this problem, don't write a row" - in practice only
     // `MvtCpp::try_new`
     builder: impl Fn(&[[f32; 3]], (f32, f32)) -> Result<W, Box<dyn std::error::Error>>,
@@ -99,12 +159,12 @@ fn run_one_backend<R, W, const N: usize>(
 where
     R: Robot<N, f32> + BlockValidate<N, f32, W> + Clone,
 {
-    let tic = Instant::now();
-    let Ok(structure) = builder(filtered_points, r_range) else {
+    let (Ok(structure), Some(construction)) = (builder(filtered_points, r_range), construction)
+    else {
         eprintln!("  {name}: skipping {robot_name}/{dataset}#{}", problem.id);
         return Ok(());
     };
-    let construction_secs = tic.elapsed().as_secs_f64();
+    let construction_secs = construction.as_secs_f64();
 
     let result = match solve_with_backend(
         robot.clone(),
@@ -187,26 +247,30 @@ where
             .join(format!("{dataset}_{robot_name}"));
         let problems = dir_to_problems(&prob_dir, joint_names, tf)?;
 
-        let mut n_run = 0usize;
-        for problem in problems.iter().filter(|p| is_sampleable(&p.world)) {
-            if n_run >= cap {
-                break;
-            }
+        // The first `cap` usable scenes, with their sampled and filtered point clouds.
+        let scenes: Vec<(&Problem<N>, usize, Vec<[f32; 3]>)> = problems
+            .iter()
+            .filter(|p| is_sampleable(&p.world))
+            .filter_map(|problem| {
+                let mut rng = SmallRng::seed_from_u64(problem.id as u64);
+                let full_points = sample_scene(&problem.world, DENSITY, &mut rng);
+                let filtered_points = centervox_filter(&full_points, r_filter);
+                (!filtered_points.is_empty()).then_some((
+                    problem,
+                    full_points.len(),
+                    filtered_points,
+                ))
+            })
+            .take(cap)
+            .collect();
+        let build_times = BuildTimes::measure(&scenes, voxel_width, r_range, mvt_cpp_r_range);
 
-            let mut rng = SmallRng::seed_from_u64(problem.id as u64);
-            let full_points = sample_scene(&problem.world, DENSITY, &mut rng);
-            if full_points.is_empty() {
-                continue;
-            }
-            let filtered_points = centervox_filter(&full_points, r_filter);
-            if filtered_points.is_empty() {
-                continue;
-            }
-
+        for (scene_idx, (problem, n_full_points, filtered_points)) in scenes.iter().enumerate() {
+            let problem = *problem;
             println!(
                 "{robot_name}/{dataset}#{}: {} points -> {} filtered (r_filter={r_filter:.4})",
                 problem.id,
-                full_points.len(),
+                n_full_points,
                 filtered_points.len(),
             );
 
@@ -215,10 +279,11 @@ where
                 robot_name,
                 dataset,
                 problem,
-                &filtered_points,
+                filtered_points,
                 r_range,
                 r_filter,
                 "primitive",
+                build_times.primitive[scene_idx],
                 |_pc, _| Ok(problem.world.clone()),
                 csv,
             )?;
@@ -227,10 +292,11 @@ where
                 robot_name,
                 dataset,
                 problem,
-                &filtered_points,
+                filtered_points,
                 r_range,
                 r_filter,
                 "mvtable",
+                build_times.mvtable[scene_idx],
                 |pc, _| Ok(PointCloudWorld(Mvt::new(pc, voxel_width))),
                 csv,
             )?;
@@ -239,10 +305,11 @@ where
                 robot_name,
                 dataset,
                 problem,
-                &filtered_points,
+                filtered_points,
                 r_range,
                 r_filter,
                 "mvtable_mutable",
+                build_times.mvtable_mutable[scene_idx],
                 |pc, _| Ok(PointCloudWorld(MutableMvt::new(pc, voxel_width))),
                 csv,
             )?;
@@ -251,10 +318,11 @@ where
                 robot_name,
                 dataset,
                 problem,
-                &filtered_points,
+                filtered_points,
                 mvt_cpp_r_range,
                 r_filter,
                 "mvtable_cpp",
+                build_times.mvt_cpp[scene_idx],
                 |pc, r_range| {
                     MvtCpp::try_new(pc, r_range)
                         .map(PointCloudWorld)
@@ -267,10 +335,11 @@ where
                 robot_name,
                 dataset,
                 problem,
-                &filtered_points,
+                filtered_points,
                 r_range,
                 r_filter,
                 "capt",
+                build_times.capt[scene_idx],
                 |pc, r_range| Ok(PointCloudWorld(Capt::new(pc, r_range, 1))),
                 csv,
             )?;
@@ -279,10 +348,11 @@ where
                 robot_name,
                 dataset,
                 problem,
-                &filtered_points,
+                filtered_points,
                 r_range,
                 r_filter,
                 "kiddo",
+                build_times.kiddo[scene_idx],
                 |pc, _| {
                     ImmutableKdTree::new_from_slice(pc)
                         .map(PointCloudWorld)
@@ -295,10 +365,11 @@ where
                 robot_name,
                 dataset,
                 problem,
-                &filtered_points,
+                filtered_points,
                 r_range,
                 r_filter,
                 "mvtable_simd",
+                build_times.mvtable[scene_idx],
                 |pc, _| Ok(SimdPointCloudWorld(Mvt::new(pc, voxel_width))),
                 csv,
             )?;
@@ -307,10 +378,11 @@ where
                 robot_name,
                 dataset,
                 problem,
-                &filtered_points,
+                filtered_points,
                 r_range,
                 r_filter,
                 "mvtable_mutable_simd",
+                build_times.mvtable_mutable[scene_idx],
                 |pc, _| Ok(SimdPointCloudWorld(MutableMvt::new(pc, voxel_width))),
                 csv,
             )?;
@@ -319,10 +391,11 @@ where
                 robot_name,
                 dataset,
                 problem,
-                &filtered_points,
+                filtered_points,
                 mvt_cpp_r_range,
                 r_filter,
                 "mvt_cpp_simd",
+                build_times.mvt_cpp[scene_idx],
                 |pc, r_range| {
                     MvtCpp::try_new(pc, r_range)
                         .map(SimdPointCloudWorld)
@@ -335,18 +408,17 @@ where
                 robot_name,
                 dataset,
                 problem,
-                &filtered_points,
+                filtered_points,
                 r_range,
                 r_filter,
                 "capt_simd",
+                build_times.capt_simd[scene_idx],
                 |pc, _| Ok(SimdPointCloudWorld(Capt::new(pc, r_range, 8))),
                 csv,
             )?;
-
-            n_run += 1;
         }
 
-        if n_run == 0 {
+        if scenes.is_empty() {
             eprintln!("skipping {robot_name}/{dataset}: no usable scenes found");
         }
     }
